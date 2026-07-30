@@ -121,8 +121,10 @@ export async function create(): Promise<void> {
   const inherits: Record<string, InheritEntry | null> = {};
 
   // Phase 1: Bulk for config files
+  const configFilesHint = INHERITABLE_FILES.join(", ");
+
   const bulkSource = await select({
-    message: "Base configuration — from?",
+    message: `Base configuration (${configFilesHint}) — from?`,
     options: [
       ...sourceOptions(profiles).filter((o) => o.value !== "none"),
       {
@@ -152,7 +154,7 @@ export async function create(): Promise<void> {
     }
   } else {
     const action = await select({
-      message: "Base configuration — how?",
+      message: `Base configuration (${configFilesHint}) — how?`,
       options: [
         {
           value: "inherit",
