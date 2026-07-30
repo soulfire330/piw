@@ -68,6 +68,9 @@ export function applyCopy(
     return;
   }
 
+  // items = string[]: only create dir if there's something to put in it
+  if (items.length === 0) return;
+
   mkdirSync(dest, { recursive: true });
   for (const item of items) {
     const srcItem = join(src, item);
