@@ -53,6 +53,7 @@ async function interactive(): Promise<void> {
   }
 
   for (const [value, { label, hint }] of Object.entries(MODES)) {
+    if (value === "list") continue; // list is CLI-only
     options.push({ value, label, hint });
   }
 
@@ -104,10 +105,9 @@ async function main(): Promise<void> {
   // If the argument matches a profile name, launch pi in that profile
   if (cmd) {
     const profiles = listAllProfileDirs();
-    const match = profiles.find((p) => p === cmd);
-    if (match) {
-      const dir = profilePath(match.name);
-      console.log(`Launching pi with profile "${match.name}"...`);
+    if (profiles.includes(cmd)) {
+      const dir = profilePath(cmd);
+      console.log(`Launching pi with profile "${cmd}"...`);
       const proc = Bun.spawn(["pi", ...process.argv.slice(3)], {
         env: { ...process.env, PI_CODING_AGENT_DIR: dir },
         stdin: "inherit",

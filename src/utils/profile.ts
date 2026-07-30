@@ -51,13 +51,13 @@ export function writeProfile(name: string, config: ProfileConfig): void {
   writeFileSync(join(dir, "profile.json"), JSON.stringify(config, null, 2));
 }
 
-/** List all profile directories (piw + pi-profile managed) */
+/** List all profile directories (piw + pi-profile managed), skip hidden */
 export function listAllProfileDirs(): string[] {
   ensureProfilesDir();
   if (!existsSync(PROFILES_DIR)) return [];
 
   return readdirSync(PROFILES_DIR, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .map((e) => e.name);
 }
 
@@ -70,7 +70,7 @@ export function listProfiles(): ProfileInfo[] {
   const profiles: ProfileInfo[] = [];
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const cfg = readProfile(entry.name);
     // Skip profiles not managed by piw (no inherits field)
     if (!cfg?.inherits) continue;
