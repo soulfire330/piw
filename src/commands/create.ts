@@ -91,22 +91,60 @@ export async function create(): Promise<void> {
   }
 
   const profiles = listAllProfileDirs();
-  const options = buildOptions(profiles);
   const inherits: Record<string, InheritEntry | null> = {};
 
-  // Prompt per resource
-  for (const key of ALL_KEYS) {
-    const entry = await select({
-      message: `${INHERIT_LABELS[key]} — where from?`,
-      options,
-    });
+  // Bulk choice first
+  const bulk = await select({
+    message: "Base configuration — where from?",
+    options: [
+      {
+        value: "base:inherit",
+        label: "Base → Inherit (symlink)",
+        hint: "all linked from ~/.pi/agent/",
+      },
+      {
+        value: "base:copy",
+        label: "Base → Copy",
+        hint: "all copied from ~/.pi/agent/",
+      },
+      {
+        value: "none",
+        label: "None",
+        hint: "all empty placeholders",
+      },
+      {
+        value: "_custom",
+        label: "Select independently...",
+        hint: "per-resource choice",
+      },
+    ],
+  });
 
-    if (isCancel(entry)) {
-      cancel("Cancelled");
-      return;
+  if (isCancel(bulk)) {
+    cancel("Cancelled");
+    return;
+  }
+
+  if (bulk !== "_custom") {
+    // Apply bulk to all
+    const entry = decodeEntry(bulk as string);
+    for (const key of ALL_KEYS) inherits[key] = entry;
+  } else {
+    // Per-resource
+    const options = buildOptions(profiles);
+    for (const key of ALL_KEYS) {
+      const entry = await select({
+        message: `${INHERIT_LABELS[key]} — where from?`,
+        options,
+      });
+
+      if (isCancel(entry)) {
+        cancel("Cancelled");
+        return;
+      }
+
+      inherits[key] = decodeEntry(entry as string);
     }
-
-    inherits[key] = decodeEntry(entry as string);
   }
 
   const proceed = await confirm({
