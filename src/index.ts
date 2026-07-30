@@ -1,10 +1,8 @@
 import { cancel, intro, isCancel, select } from "@clack/prompts";
 import { create } from "./commands/create.js";
-import { delete_ } from "./commands/delete.js";
 import { install } from "./commands/install.js";
 import { list } from "./commands/list.js";
-import { rename } from "./commands/rename.js";
-import { sync } from "./commands/sync.js";
+import { manage } from "./commands/manage.js";
 import { listAllProfileDirs } from "./utils/profile.js";
 import { profilePath } from "./utils/symlinks.js";
 
@@ -22,17 +20,15 @@ const MODES: Record<
     hint: "Show all profiles",
     fn: list,
   },
+  manage: {
+    label: "Manage",
+    hint: "Rename, manage resources, or delete a profile",
+    fn: manage,
+  },
   install: {
     label: "Install",
     hint: "Install a package into a profile",
     fn: install,
-  },
-  delete: { label: "Delete", hint: "Remove a profile", fn: delete_ },
-  rename: { label: "Rename", hint: "Rename an existing profile", fn: rename },
-  sync: {
-    label: "Sync",
-    hint: "Edit which resources are copied from base",
-    fn: sync,
   },
 };
 
@@ -122,11 +118,11 @@ async function main(): Promise<void> {
     console.log("  piw                Interactive mode");
     console.log("  piw create         Create a profile");
     console.log("  piw list           List profiles");
-    console.log("  piw delete         Delete a profile");
-    console.log("  piw rename         Rename a profile");
-    console.log("  piw sync           Edit copies from base");
+    console.log(
+      "  piw manage         Manage a profile (rename, resources, delete)",
+    );
     console.log("  piw install <pkg>  Install a package into a profile");
-    console.log("  piw <profile>       Launch pi with a specific profile");
+    console.log("  piw <profile>      Launch pi with a specific profile");
     return;
   }
 
