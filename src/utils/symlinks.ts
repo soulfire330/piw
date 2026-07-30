@@ -50,7 +50,8 @@ function clearResource(dest: string): void {
 
 /** Apply an InheritEntry to a profile key.
  *  null = "none" → create empty dir or skip for files.
- *  For directories with `items`, only those sub-items are applied. */
+ *  Directories always use per-item symlinks/copies even when items is undefined
+ *  (undefined = resolve all items from source). */
 export function applyInheritEntry(
   profile: string,
   key: InheritableKey,
@@ -68,10 +69,10 @@ export function applyInheritEntry(
 
   const isDir = INHERITABLE_DIRS.includes(key as never);
   const src = sourcePath(entry, key);
-  const items = entry.items;
 
-  if (isDir && items !== undefined) {
-    // Per-item: create dest dir, apply each item
+  if (isDir) {
+    // Always per-item: resolve items from source if not specified
+    const items = entry.items ?? listDirItems(src);
     mkdirSync(dest, { recursive: true });
     for (const item of items) {
       const srcItem = join(src, item);
@@ -86,18 +87,26 @@ export function applyInheritEntry(
     return;
   }
 
+  // Files: whole-resource symlink or copy
   if (entry.action === "inherit") {
-    if (!existsSync(src)) {
-      if (isDir) mkdirSync(dest, { recursive: true });
-      return;
-    }
+    if (!existsSync(src)) return;
     symlinkSync(src, dest);
   } else {
     if (existsSync(src)) {
       cpSync(src, dest, { recursive: true });
-    } else if (isDir) {
-      mkdirSync(dest, { recursive: true });
     }
+  }
+}
+
+/** List non-dot entries in a directory. Returns [] if nonexistent. */
+function listDirItems(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((e) => !e.name.startsWith("."))
+      .map((e) => e.name);
+  } catch {
+    return [];
   }
 }
 
