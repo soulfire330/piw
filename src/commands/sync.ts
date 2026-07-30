@@ -8,43 +8,27 @@ import {
   select,
   tasks,
 } from "@clack/prompts";
-import type { InheritableKey, InheritEntry } from "../types.js";
-import {
-  INHERIT_LABELS,
-  INHERITABLE_DIRS,
-  INHERITABLE_FILES,
-} from "../types.js";
-import {
-  listAllProfileDirs,
-  listProfiles,
-  readProfile,
-  updateInherits,
-} from "../utils/profile.js";
+import type { CopyableDir, CopyableFile } from "../types.js";
+import { COPYABLE_DIRS, COPYABLE_FILES, COPYABLE_LABELS } from "../types.js";
+import { listProfiles, readProfile, updateConfig } from "../utils/profile.js";
 import { listSourceItems } from "../utils/symlinks.js";
 
-function entryLabel(entry: InheritEntry | null): string {
-  if (entry === null) return "None";
-  const src = entry.source === "base" ? "Base" : entry.source;
-  const act = entry.action === "inherit" ? "symlink" : "copy";
-  const count =
-    entry.items !== undefined ? ` (${entry.items.length} items)` : "";
-  return `${src}/${act}${count}`;
+function dirLabel(items: string[]): string {
+  if (items.length === 0) return "none";
+  return items.join(", ") || "(empty dir)";
 }
 
-const ALL_KEYS: InheritableKey[] = [
-  ...INHERITABLE_FILES,
-  ...INHERITABLE_DIRS,
-] as InheritableKey[];
+function fileLabel(on: boolean): string {
+  return on ? "copy" : "none";
+}
 
 export async function sync(): Promise<void> {
-  intro("piw — Edit Inheritance");
+  intro("piw — Edit Copies");
 
   const profiles = listProfiles();
 
   if (profiles.length === 0) {
-    log.warn(
-      "No piw-managed profiles found. Create one first, or use 'piw adopt' to convert an existing profile.",
-    );
+    log.warn("No piw-managed profiles found. Create one first.");
     outro("Done");
     return;
   }
@@ -67,86 +51,96 @@ export async function sync(): Promise<void> {
     return;
   }
 
-  const dirs = listAllProfileDirs().filter((d) => d !== target);
-  const changes: string[] = [];
-  const newInherits: Record<InheritableKey, InheritEntry | null> = {
-    ...cfg.inherits,
-  };
+  // Build initial values: selected keys
+  const initial: string[] = [];
+  for (const f of COPYABLE_FILES) {
+    if (cfg.files[f]) initial.push(f);
+  }
+  for (const d of COPYABLE_DIRS) {
+    if (cfg.dirs[d].length > 0) initial.push(d);
+  }
 
-  for (const key of ALL_KEYS) {
-    const current = newInherits[key] ?? null;
-    const currentLabel = entryLabel(current);
-    const isDir = INHERITABLE_DIRS.includes(key as never);
+  const selected = await groupMultiselect({
+    message: "Which resources to copy from base?",
+    options: {
+      "Config files": [...COPYABLE_FILES].map((k) => ({
+        value: k,
+        label: COPYABLE_LABELS[k],
+        hint: `currently: ${fileLabel(cfg.files[k])}`,
+      })),
+      Directories: [...COPYABLE_DIRS].map((k) => ({
+        value: k,
+        label: COPYABLE_LABELS[k],
+        hint: `currently: ${dirLabel(cfg.dirs[k])}`,
+      })),
+    },
+    initialValues: initial,
+    required: false,
+  });
 
-    const source = await select({
-      message: `${INHERIT_LABELS[key]} — currently ${currentLabel}`,
-      options: [
-        { value: "keep", label: `Keep current (${currentLabel})` },
-        { value: "base", label: "Base (~/.pi/agent/)" },
-        ...dirs.map((d) => ({ value: d, label: d })),
-        { value: "none", label: "None" },
-      ],
-    });
+  if (isCancel(selected)) {
+    cancel("Cancelled");
+    return;
+  }
 
-    if (isCancel(source)) {
-      cancel("Cancelled");
-      return;
-    }
+  const sel = selected as string[];
 
-    if (source === "keep") continue;
-    if (source === "none") {
-      changes.push(`${INHERIT_LABELS[key]}: ${currentLabel} → None`);
-      newInherits[key] = null;
+  // Build new files config
+  const files: Record<string, boolean> = {};
+  for (const f of COPYABLE_FILES) files[f] = sel.includes(f);
+
+  // Build new dirs config
+  const dirs: Record<string, string[]> = {};
+
+  for (const d of COPYABLE_DIRS) {
+    if (!sel.includes(d)) {
+      dirs[d] = [];
       continue;
     }
 
-    const action = await select({
-      message: `${INHERIT_LABELS[key]} — how?`,
-      options: [
-        { value: "inherit", label: "Inherit (symlink)" },
-        { value: "copy", label: "Copy" },
-      ],
+    const items = listSourceItems(d as CopyableDir);
+
+    if (items.length === 0) {
+      dirs[d] = [];
+      continue;
+    }
+
+    const current = cfg.dirs[d];
+
+    const picked = await groupMultiselect({
+      message: `Which ${d} to copy?`,
+      options: {
+        Items: items.map((item) => ({ value: item, label: item })),
+      },
+      initialValues: current.length > 0 ? current : items,
+      required: false,
     });
 
-    if (isCancel(action)) {
+    if (isCancel(picked)) {
       cancel("Cancelled");
       return;
     }
 
-    const entry: InheritEntry = {
-      source: source as string,
-      action: action as "copy" | "inherit",
-    };
+    dirs[d] = (picked as string[]) ?? [];
+  }
 
-    // For directories: show per-item multiselect
-    if (isDir) {
-      const items = listSourceItems(entry, key);
-
-      if (items.length > 0) {
-        const selected = await groupMultiselect({
-          message: `Which items to ${action === "inherit" ? "inherit" : "copy"}?`,
-          options: {
-            Items: items.map((item) => ({ value: item, label: item })),
-          },
-          initialValues: items,
-          required: false,
-        });
-
-        if (isCancel(selected)) {
-          cancel("Cancelled");
-          return;
-        }
-
-        entry.items = (selected as string[]) ?? [];
-      } else {
-        entry.items = [];
-      }
+  // Detect changes
+  const changes: string[] = [];
+  for (const f of COPYABLE_FILES) {
+    if (cfg.files[f] !== files[f]) {
+      changes.push(
+        `${COPYABLE_LABELS[f]}: ${fileLabel(cfg.files[f])} → ${fileLabel(files[f])}`,
+      );
     }
-
-    changes.push(
-      `${INHERIT_LABELS[key]}: ${currentLabel} → ${entryLabel(entry)}`,
-    );
-    newInherits[key] = entry;
+  }
+  for (const d of COPYABLE_DIRS) {
+    const old = cfg.dirs[d];
+    const neu = dirs[d];
+    if (old.join(",") !== neu.join(",")) {
+      changes.push(
+        `${COPYABLE_LABELS[d]}: ${dirLabel(old)} → ${dirLabel(neu)}`,
+      );
+    }
   }
 
   if (changes.length === 0) {
@@ -159,9 +153,13 @@ export async function sync(): Promise<void> {
 
   await tasks([
     {
-      title: "Updating inheritance",
+      title: "Updating copies",
       task: async () => {
-        updateInherits(target, newInherits);
+        updateConfig(
+          target,
+          files as Record<CopyableFile, boolean>,
+          dirs as Record<CopyableDir, string[]>,
+        );
         return `${changes.length} resource(s) updated`;
       },
     },

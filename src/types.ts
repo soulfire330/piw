@@ -1,25 +1,22 @@
-// Resources that can be inherited from base Pi (~/.pi/agent/)
-export const INHERITABLE_FILES = [
-  "auth.json",
+// Config files that can be copied from base Pi (~/.pi/agent/).
+// auth.json is always symlinked — not listed here.
+export const COPYABLE_FILES = [
   "models.json",
   "settings.json",
   "keybindings.json",
 ] as const;
 
-export const INHERITABLE_DIRS = [
+export const COPYABLE_DIRS = [
   "extensions",
   "skills",
   "prompts",
   "themes",
 ] as const;
 
-export type InheritableFile = (typeof INHERITABLE_FILES)[number];
-export type InheritableDir = (typeof INHERITABLE_DIRS)[number];
-export type InheritableKey = InheritableFile | InheritableDir;
+export type CopyableFile = (typeof COPYABLE_FILES)[number];
+export type CopyableDir = (typeof COPYABLE_DIRS)[number];
 
-// Maps a key to its display label
-export const INHERIT_LABELS: Record<InheritableKey, string> = {
-  "auth.json": "auth.json — credentials",
+export const COPYABLE_LABELS: Record<CopyableFile | CopyableDir, string> = {
   "models.json": "models.json — custom models",
   "settings.json": "settings.json — settings",
   "keybindings.json": "keybindings.json — keybindings",
@@ -29,25 +26,19 @@ export const INHERIT_LABELS: Record<InheritableKey, string> = {
   themes: "themes/ — themes",
 };
 
-// Per-resource inheritance entry.
-// null → "none" (empty placeholder, don't copy or link anything)
-export interface InheritEntry {
-  source: "base" | string; // "base" or a profile name
-  action: "copy" | "inherit";
-  /** For directories: only apply these items. Undefined = all. */
-  items?: string[];
-}
-
 // Per-profile metadata stored in ~/.pi/profiles/<name>/profile.json
 export interface ProfileConfig {
   name: string;
   createdAt: string; // ISO date
-  inherits: Record<InheritableKey, InheritEntry | null>;
+  /** Files to copy from base (false = skip) */
+  files: Record<CopyableFile, boolean>;
+  /** Directory items to copy from base (empty = none) */
+  dirs: Record<CopyableDir, string[]>;
 }
 
 export interface ProfileInfo {
   name: string;
   createdAt: string;
   dir: string;
-  inherits: Record<InheritableKey, InheritEntry | null>;
+  config: ProfileConfig;
 }

@@ -9,30 +9,36 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type {
-  InheritableKey,
-  InheritEntry,
+  CopyableDir,
+  CopyableFile,
   ProfileConfig,
   ProfileInfo,
 } from "../types.js";
-import { INHERITABLE_DIRS, INHERITABLE_FILES } from "../types.js";
-import { applyInheritEntry, profilePath } from "./symlinks.js";
+import { COPYABLE_DIRS, COPYABLE_FILES } from "../types.js";
+import { applyAuth, applyCopy, profilePath } from "./symlinks.js";
 
 const PROFILES_DIR = `${process.env.HOME}/.pi/profiles`;
 
-/** Ensure the profiles root directory exists */
 export function ensureProfilesDir(): void {
   if (!existsSync(PROFILES_DIR)) {
     mkdirSync(PROFILES_DIR, { recursive: true });
   }
 }
 
-/** Default inheritance: everything inherited from base via symlink */
-export function defaultInherits(): Record<InheritableKey, InheritEntry> {
-  const defaults: Record<string, InheritEntry> = {};
-  const base: InheritEntry = { source: "base", action: "inherit" };
-  for (const f of INHERITABLE_FILES) defaults[f] = base;
-  for (const d of INHERITABLE_DIRS) defaults[d] = base;
-  return defaults as Record<InheritableKey, InheritEntry>;
+/** Default config: nothing copied */
+export function defaultConfig(): ProfileConfig {
+  const files: Record<string, boolean> = {};
+  for (const f of COPYABLE_FILES) files[f] = false;
+
+  const dirs: Record<string, string[]> = {};
+  for (const d of COPYABLE_DIRS) dirs[d] = [];
+
+  return {
+    name: "",
+    createdAt: "",
+    files: files as Record<CopyableFile, boolean>,
+    dirs: dirs as Record<CopyableDir, string[]>,
+  };
 }
 
 /** Read a profile's profile.json */
@@ -47,7 +53,7 @@ export function readProfile(name: string): ProfileConfig | null {
 }
 
 /** Write profile.json */
-export function writeProfile(name: string, config: ProfileConfig): void {
+function writeProfile(name: string, config: ProfileConfig): void {
   const dir = profilePath(name);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "profile.json"), JSON.stringify(config, null, 2));
@@ -74,12 +80,12 @@ export function listProfiles(): ProfileInfo[] {
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const cfg = readProfile(entry.name);
-    if (!cfg?.inherits) continue;
+    if (!cfg?.files) continue;
     profiles.push({
       name: cfg.name,
       createdAt: cfg.createdAt,
       dir: profilePath(entry.name),
-      inherits: cfg.inherits,
+      config: cfg,
     });
   }
 
@@ -89,7 +95,8 @@ export function listProfiles(): ProfileInfo[] {
 /** Create a new profile */
 export function createProfile(
   name: string,
-  inherits: Record<InheritableKey, InheritEntry | null>,
+  files: Record<CopyableFile, boolean>,
+  dirs: Record<CopyableDir, string[]>,
 ): ProfileConfig {
   ensureProfilesDir();
 
@@ -99,7 +106,8 @@ export function createProfile(
   const config: ProfileConfig = {
     name,
     createdAt: new Date().toISOString(),
-    inherits,
+    files: { ...files },
+    dirs: { ...dirs },
   };
 
   mkdirSync(dir, { recursive: true });
@@ -111,13 +119,11 @@ export function createProfile(
   writeFileSync(join(dir, "AGENTS.md"), "");
   writeFileSync(join(dir, "APPEND_SYSTEM.md"), "");
 
-  // Apply inheritance
-  for (const key of [
-    ...INHERITABLE_FILES,
-    ...INHERITABLE_DIRS,
-  ] as InheritableKey[]) {
-    applyInheritEntry(name, key, inherits[key] ?? null);
-  }
+  // Auth is always symlinked from base
+  applyAuth(name);
+
+  // Apply copies
+  applyAll(name, files, dirs);
 
   return config;
 }
@@ -146,21 +152,33 @@ export function renameProfile(oldName: string, newName: string): void {
   }
 }
 
-/** Update inheritance for a profile: apply new entries, diffing against old */
-export function updateInherits(
+/** Update config and re-apply all copies */
+export function updateConfig(
   name: string,
-  inherits: Record<InheritableKey, InheritEntry | null>,
+  files: Record<CopyableFile, boolean>,
+  dirs: Record<CopyableDir, string[]>,
 ): void {
   const cfg = readProfile(name);
   if (!cfg) throw new Error(`Profile "${name}" not found`);
 
-  cfg.inherits = { ...inherits };
+  cfg.files = { ...files };
+  cfg.dirs = { ...dirs };
   writeProfile(name, cfg);
 
-  for (const key of [
-    ...INHERITABLE_FILES,
-    ...INHERITABLE_DIRS,
-  ] as InheritableKey[]) {
-    applyInheritEntry(name, key, inherits[key] ?? null);
+  applyAuth(name);
+  applyAll(name, files, dirs);
+}
+
+/** Apply all copies for a profile */
+function applyAll(
+  name: string,
+  files: Record<CopyableFile, boolean>,
+  dirs: Record<CopyableDir, string[]>,
+): void {
+  for (const f of COPYABLE_FILES) {
+    applyCopy(name, f, files[f] ? undefined : null);
+  }
+  for (const d of COPYABLE_DIRS) {
+    applyCopy(name, d, dirs[d]);
   }
 }

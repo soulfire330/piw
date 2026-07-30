@@ -1,15 +1,15 @@
 import { intro, log, outro } from "@clack/prompts";
-import type { InheritableKey, InheritEntry } from "../types.js";
-import { listProfiles } from "../utils/profile.js";
-import { isInherited } from "../utils/symlinks.js";
 
-function entryDesc(entry: InheritEntry | null): string {
-  if (entry === null) return "none";
-  const src = entry.source === "base" ? "Base" : entry.source;
-  const act = entry.action === "inherit" ? "symlink" : "copy";
-  const count =
-    entry.items !== undefined ? ` (${entry.items.length} items)` : "";
-  return `${src}/${act}${count}`;
+import { COPYABLE_DIRS, COPYABLE_FILES, COPYABLE_LABELS } from "../types.js";
+import { listProfiles } from "../utils/profile.js";
+
+function fileDesc(on: boolean): string {
+  return on ? "copy from base" : "none";
+}
+
+function dirDesc(items: string[]): string {
+  if (items.length === 0) return "none";
+  return `${items.length} items: ${items.join(", ")}`;
 }
 
 export async function list(): Promise<void> {
@@ -32,15 +32,11 @@ export async function list(): Promise<void> {
       `  Created: ${new Date(p.createdAt).toLocaleDateString()}`,
     ];
 
-    for (const [key, val] of Object.entries(p.inherits) as [
-      InheritableKey,
-      InheritEntry | null,
-    ][]) {
-      const isLink = isInherited(p.name, key);
-      const config = entryDesc(val);
-      const disk = isLink ? "symlink" : "local";
-      const mismatch = (val?.action === "inherit") !== isLink ? " ⚠️" : "";
-      lines.push(`  ${key}: ${config} (${disk})${mismatch}`);
+    for (const f of COPYABLE_FILES) {
+      lines.push(`  ${COPYABLE_LABELS[f]}: ${fileDesc(p.config.files[f])}`);
+    }
+    for (const d of COPYABLE_DIRS) {
+      lines.push(`  ${COPYABLE_LABELS[d]}: ${dirDesc(p.config.dirs[d])}`);
     }
 
     log.message(`${lines.join("\n")}\n`);

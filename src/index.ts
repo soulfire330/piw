@@ -14,12 +14,12 @@ const MODES: Record<
 > = {
   create: {
     label: "Create",
-    hint: "Create a new profile with custom inheritance",
+    hint: "Create a new profile",
     fn: create,
   },
   list: {
     label: "List",
-    hint: "Show all profiles and their inheritance status",
+    hint: "Show all profiles",
     fn: list,
   },
   install: {
@@ -31,7 +31,7 @@ const MODES: Record<
   rename: { label: "Rename", hint: "Rename an existing profile", fn: rename },
   sync: {
     label: "Sync",
-    hint: "Toggle which resources are inherited via symlinks",
+    hint: "Edit which resources are copied from base",
     fn: sync,
   },
 };
@@ -41,7 +41,6 @@ async function interactive(): Promise<void> {
 
   const profiles = listAllProfileDirs();
 
-  // Build menu: Run first if profiles exist, then the rest
   const options: Array<{ value: string; label: string; hint?: string }> = [];
 
   if (profiles.length > 0) {
@@ -53,7 +52,7 @@ async function interactive(): Promise<void> {
   }
 
   for (const [value, { label, hint }] of Object.entries(MODES)) {
-    if (value === "list") continue; // list is CLI-only
+    if (value === "list") continue;
     options.push({ value, label, hint });
   }
 
@@ -67,7 +66,6 @@ async function interactive(): Promise<void> {
     return;
   }
 
-  // Run: pick a profile and launch pi
   if (mode === "_run") {
     const target = await select({
       message: "Select profile to launch:",
@@ -102,7 +100,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // If the argument matches a profile name, launch pi in that profile
   if (cmd) {
     const profiles = listAllProfileDirs();
     if (profiles.includes(cmd)) {
@@ -127,7 +124,7 @@ async function main(): Promise<void> {
     console.log("  piw list           List profiles");
     console.log("  piw delete         Delete a profile");
     console.log("  piw rename         Rename a profile");
-    console.log("  piw sync           Toggle inheritance");
+    console.log("  piw sync           Edit copies from base");
     console.log("  piw install <pkg>  Install a package into a profile");
     console.log("  piw <profile>       Launch pi with a specific profile");
     return;
