@@ -39,18 +39,54 @@ const MODES: Record<
 async function interactive(): Promise<void> {
   intro("piw — Pi Profile Manager");
 
+  const profiles = listProfiles();
+
+  // Build menu: Run first if profiles exist, then the rest
+  const options: Array<{ value: string; label: string; hint?: string }> = [];
+
+  if (profiles.length > 0) {
+    options.push({
+      value: "_run",
+      label: "Run",
+      hint: `Launch pi with a profile (${profiles.length} available)`,
+    });
+  }
+
+  for (const [value, { label, hint }] of Object.entries(MODES)) {
+    options.push({ value, label, hint });
+  }
+
   const mode = await select({
     message: "What would you like to do?",
-    options: Object.entries(MODES).map(([value, { label, hint }]) => ({
-      value,
-      label,
-      hint,
-    })),
+    options,
   });
 
   if (isCancel(mode)) {
     cancel("Goodbye");
     return;
+  }
+
+  // Run: pick a profile and launch pi
+  if (mode === "_run") {
+    const target = await select({
+      message: "Select profile to launch:",
+      options: profiles.map((p) => ({ value: p.name, label: p.name })),
+    });
+
+    if (isCancel(target)) {
+      cancel("Cancelled");
+      return;
+    }
+
+    const dir = profilePath(target);
+    console.log(`Launching pi with profile "${target}"...`);
+    const proc = Bun.spawn(["pi"], {
+      env: { ...process.env, PI_CODING_AGENT_DIR: dir },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    process.exit(await proc.exited);
   }
 
   const entry = MODES[mode];
