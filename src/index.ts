@@ -1,6 +1,7 @@
 import { cancel, intro, isCancel, select } from "@clack/prompts";
 import { create } from "./commands/create.js";
 import { delete_ } from "./commands/delete.js";
+import { install } from "./commands/install.js";
 import { list } from "./commands/list.js";
 import { rename } from "./commands/rename.js";
 import { sync } from "./commands/sync.js";
@@ -18,6 +19,11 @@ const MODES: Record<
     label: "List",
     hint: "Show all profiles and their inheritance status",
     fn: list,
+  },
+  install: {
+    label: "Install",
+    hint: "Install a package into a profile",
+    fn: install,
   },
   delete: { label: "Delete", hint: "Remove a profile", fn: delete_ },
   rename: { label: "Rename", hint: "Rename an existing profile", fn: rename },
@@ -67,6 +73,7 @@ async function main(): Promise<void> {
     console.log("  piw delete         Delete a profile");
     console.log("  piw rename         Rename a profile");
     console.log("  piw sync           Toggle inheritance");
+    console.log("  piw install <pkg>  Install a package into a profile");
     return;
   }
 
