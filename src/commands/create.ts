@@ -94,30 +94,42 @@ export async function create(): Promise<void> {
   const inherits: Record<string, InheritEntry | null> = {};
 
   // Bulk choice first
+  const bulkOptions: Array<{ value: string; label: string; hint?: string }> = [
+    {
+      value: "base:inherit",
+      label: "Base → Inherit (symlink)",
+      hint: "all linked from ~/.pi/agent/",
+    },
+    {
+      value: "base:copy",
+      label: "Base → Copy",
+      hint: "all copied from ~/.pi/agent/",
+    },
+  ];
+
+  for (const p of profiles) {
+    bulkOptions.push({
+      value: `${p}:inherit`,
+      label: `${p} → Inherit (symlink)`,
+    });
+    bulkOptions.push({
+      value: `${p}:copy`,
+      label: `${p} → Copy`,
+    });
+  }
+
+  bulkOptions.push(
+    { value: "none", label: "None", hint: "all empty placeholders" },
+    {
+      value: "_custom",
+      label: "Select independently...",
+      hint: "per-resource choice",
+    },
+  );
+
   const bulk = await select({
     message: "Base configuration — where from?",
-    options: [
-      {
-        value: "base:inherit",
-        label: "Base → Inherit (symlink)",
-        hint: "all linked from ~/.pi/agent/",
-      },
-      {
-        value: "base:copy",
-        label: "Base → Copy",
-        hint: "all copied from ~/.pi/agent/",
-      },
-      {
-        value: "none",
-        label: "None",
-        hint: "all empty placeholders",
-      },
-      {
-        value: "_custom",
-        label: "Select independently...",
-        hint: "per-resource choice",
-      },
-    ],
+    options: bulkOptions,
   });
 
   if (isCancel(bulk)) {
