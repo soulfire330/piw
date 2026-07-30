@@ -10,8 +10,8 @@ import {
   tasks,
   text,
 } from "@clack/prompts";
-import type { CopyableDir, CopyableFile, ProfileConfig } from "../types.js";
-import { COPYABLE_DIRS, COPYABLE_FILES, COPYABLE_LABELS } from "../types.js";
+import type { CopyableDir, ProfileConfig } from "../types.js";
+import { COPYABLE_DIRS, COPYABLE_LABELS } from "../types.js";
 import {
   deleteProfile,
   listAllProfileDirs,
@@ -21,10 +21,6 @@ import {
   updateConfig,
 } from "../utils/profile.js";
 import { applyCopy, listSourceItems } from "../utils/symlinks.js";
-
-function fileLabel(on: boolean): string {
-  return on ? "copy" : "none";
-}
 
 function dirLabel(items: string[]): string {
   if (items.length === 0) return "none";
@@ -86,35 +82,6 @@ async function doDelete(name: string): Promise<void> {
 }
 
 // ── Resource management ──────────────────────────────────────
-
-async function manageFile(
-  name: string,
-  cfg: ProfileConfig,
-  key: CopyableFile,
-): Promise<void> {
-  const current = cfg.files[key];
-  const currentLabel = fileLabel(current);
-
-  const action = await select({
-    message: `${COPYABLE_LABELS[key]} — currently ${currentLabel}`,
-    options: [
-      {
-        value: "toggle",
-        label: current ? "Remove (stop copying)" : "Copy from source",
-      },
-      { value: "done", label: "Back" },
-    ],
-  });
-
-  if (isCancel(action) || action === "done") return;
-
-  cfg.files[key] = !current;
-  updateConfig(name, cfg.source, cfg.files, cfg.dirs);
-  applyCopy(name, cfg.source, key, cfg.files[key] ? undefined : null);
-  log.success(
-    `${COPYABLE_LABELS[key]}: ${currentLabel} → ${fileLabel(cfg.files[key])}`,
-  );
-}
 
 async function manageDir(
   name: string,
@@ -265,18 +232,11 @@ async function doResources(name: string): Promise<void> {
 
     const src = cfg.source === "base" ? "Base" : cfg.source;
 
-    const allKeys = [
-      ...COPYABLE_FILES.map((k) => ({
-        value: k,
-        label: COPYABLE_LABELS[k],
-        hint: fileLabel(cfg.files[k]),
-      })),
-      ...COPYABLE_DIRS.map((k) => ({
-        value: k,
-        label: COPYABLE_LABELS[k],
-        hint: dirLabel(cfg.dirs[k]),
-      })),
-    ];
+    const allKeys = COPYABLE_DIRS.map((k) => ({
+      value: k,
+      label: COPYABLE_LABELS[k],
+      hint: dirLabel(cfg.dirs[k]),
+    }));
 
     const chosen = await select({
       message: `Resources (source: ${src})`,
@@ -285,11 +245,7 @@ async function doResources(name: string): Promise<void> {
 
     if (isCancel(chosen) || chosen === "done") return;
 
-    if (COPYABLE_FILES.includes(chosen as never)) {
-      await manageFile(name, cfg, chosen as CopyableFile);
-    } else {
-      await manageDir(name, cfg, chosen as CopyableDir);
-    }
+    await manageDir(name, cfg, chosen as CopyableDir);
   }
 }
 
