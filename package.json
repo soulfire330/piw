@@ -1,0 +1,30 @@
+{
+  "name": "@soulfire330/piw",
+  "version": "0.0.1",
+  "description": "Interactive Pi profile manager — CRUD + granular symlink-based inheritance, like VS Code profiles.",
+  "keywords": ["pi", "pi-package", "profile", "profiles", "pi-profile", "clack"],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "piw": "./bin/piw.ts"
+  },
+  "scripts": {
+    "dev": "bun run --bun src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format . --write"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.6",
+    "@types/bun": "latest"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
