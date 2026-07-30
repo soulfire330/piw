@@ -6,13 +6,14 @@ import {
   isCancel,
   log,
   outro,
+  select,
   tasks,
   text,
 } from "@clack/prompts";
 import type { CopyableDir, CopyableFile } from "../types.js";
 import { COPYABLE_DIRS, COPYABLE_FILES, COPYABLE_LABELS } from "../types.js";
-import { createProfile } from "../utils/profile.js";
-import { listSourceItems } from "../utils/symlinks.js";
+import { createProfile, listAllProfileDirs } from "../utils/profile.js";
+import { listSourceItems, sourceDir } from "../utils/symlinks.js";
 
 export async function create(): Promise<void> {
   intro("piw — Create Profile");
@@ -33,64 +34,90 @@ export async function create(): Promise<void> {
     return;
   }
 
-  // Step 1: groupMultiselect — what to copy from base?
-  const selected = await groupMultiselect({
-    message: "What to copy from base (~/.pi/agent/)?",
-    options: {
-      "Config files": [...COPYABLE_FILES].map((k) => ({
-        value: k,
-        label: COPYABLE_LABELS[k],
+  const profiles = listAllProfileDirs();
+
+  // Step 1: pick source
+  const home = process.env.HOME ?? "~";
+  const sourceOptions: Array<{ value: string; label: string; hint?: string }> =
+    [
+      { value: "base", label: "Base", hint: `${home}/.pi/agent/` },
+      ...profiles.map((p) => ({
+        value: p,
+        label: p,
+        hint: `${home}/.pi/profiles/${p}/`,
       })),
-      Directories: [...COPYABLE_DIRS].map((k) => ({
-        value: k,
-        label: COPYABLE_LABELS[k],
-      })),
-    },
-    required: false,
+      { value: "none", label: "None", hint: "empty profile" },
+    ];
+
+  const src = await select({
+    message: "Copy from?",
+    options: sourceOptions,
   });
 
-  if (isCancel(selected)) {
+  if (isCancel(src)) {
     cancel("Cancelled");
     return;
   }
 
-  const sel = selected as string[];
+  const source = src as string;
 
-  // Build files config
   const files: Record<string, boolean> = {};
-  for (const f of COPYABLE_FILES) files[f] = sel.includes(f);
-
-  // Build dirs config — ask per-dir which items
   const dirs: Record<string, string[]> = {};
 
-  for (const d of COPYABLE_DIRS) {
-    if (!sel.includes(d)) {
-      dirs[d] = [];
-      continue;
-    }
+  for (const f of COPYABLE_FILES) files[f] = false;
+  for (const d of COPYABLE_DIRS) dirs[d] = [];
 
-    const items = listSourceItems(d as CopyableDir);
+  // Step 2: if source != none, pick what to copy
+  if (source !== "none") {
+    const srcLabel = source === "base" ? "Base" : source;
+    const srcHint = sourceDir(source);
 
-    if (items.length === 0) {
-      dirs[d] = [];
-      continue;
-    }
-
-    const picked = await groupMultiselect({
-      message: `Which ${d} to copy?`,
+    const selected = await groupMultiselect({
+      message: `What to copy from ${srcLabel} (${srcHint})?`,
       options: {
-        Items: items.map((item) => ({ value: item, label: item })),
+        "Config files": [...COPYABLE_FILES].map((k) => ({
+          value: k,
+          label: COPYABLE_LABELS[k],
+        })),
+        Directories: [...COPYABLE_DIRS].map((k) => ({
+          value: k,
+          label: COPYABLE_LABELS[k],
+        })),
       },
-      initialValues: items,
       required: false,
     });
 
-    if (isCancel(picked)) {
+    if (isCancel(selected)) {
       cancel("Cancelled");
       return;
     }
 
-    dirs[d] = (picked as string[]) ?? [];
+    const sel = selected as string[];
+    for (const f of COPYABLE_FILES) files[f] = sel.includes(f);
+
+    for (const d of COPYABLE_DIRS) {
+      if (!sel.includes(d)) continue;
+
+      const items = listSourceItems(source, d as CopyableDir);
+
+      if (items.length === 0) continue;
+
+      const picked = await groupMultiselect({
+        message: `Which ${d} to copy?`,
+        options: {
+          Items: items.map((item) => ({ value: item, label: item })),
+        },
+        initialValues: items,
+        required: false,
+      });
+
+      if (isCancel(picked)) {
+        cancel("Cancelled");
+        return;
+      }
+
+      dirs[d] = (picked as string[]) ?? [];
+    }
   }
 
   const proceed = await confirm({
@@ -110,6 +137,7 @@ export async function create(): Promise<void> {
       task: async () => {
         createProfile(
           name,
+          source,
           files as Record<CopyableFile, boolean>,
           dirs as Record<CopyableDir, string[]>,
         );

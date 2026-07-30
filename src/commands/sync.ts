@@ -10,8 +10,13 @@ import {
 } from "@clack/prompts";
 import type { CopyableDir, CopyableFile } from "../types.js";
 import { COPYABLE_DIRS, COPYABLE_FILES, COPYABLE_LABELS } from "../types.js";
-import { listProfiles, readProfile, updateConfig } from "../utils/profile.js";
-import { listSourceItems } from "../utils/symlinks.js";
+import {
+  listAllProfileDirs,
+  listProfiles,
+  readProfile,
+  updateConfig,
+} from "../utils/profile.js";
+import { listSourceItems, sourceDir } from "../utils/symlinks.js";
 
 function dirLabel(items: string[]): string {
   if (items.length === 0) return "none";
@@ -51,6 +56,31 @@ export async function sync(): Promise<void> {
     return;
   }
 
+  // Pick source
+  const home = process.env.HOME ?? "~";
+  const allDirs = listAllProfileDirs().filter((d) => d !== target);
+
+  const src = await select({
+    message: `Copy from? (currently: ${cfg.source})`,
+    options: [
+      { value: "base", label: "Base", hint: `${home}/.pi/agent/` },
+      ...allDirs.map((p) => ({
+        value: p,
+        label: p,
+        hint: `${home}/.pi/profiles/${p}/`,
+      })),
+      { value: cfg.source, label: `Keep current (${cfg.source})` },
+    ],
+  });
+
+  if (isCancel(src)) {
+    cancel("Cancelled");
+    return;
+  }
+
+  const source = src === cfg.source ? cfg.source : (src as string);
+  const srcLabel = source === "base" ? "Base" : source;
+
   // Build initial values: selected keys
   const initial: string[] = [];
   for (const f of COPYABLE_FILES) {
@@ -61,7 +91,7 @@ export async function sync(): Promise<void> {
   }
 
   const selected = await groupMultiselect({
-    message: "Which resources to copy from base?",
+    message: `What to copy from ${srcLabel} (${sourceDir(source)})?`,
     options: {
       "Config files": [...COPYABLE_FILES].map((k) => ({
         value: k,
@@ -85,11 +115,9 @@ export async function sync(): Promise<void> {
 
   const sel = selected as string[];
 
-  // Build new files config
   const files: Record<string, boolean> = {};
   for (const f of COPYABLE_FILES) files[f] = sel.includes(f);
 
-  // Build new dirs config
   const dirs: Record<string, string[]> = {};
 
   for (const d of COPYABLE_DIRS) {
@@ -98,7 +126,7 @@ export async function sync(): Promise<void> {
       continue;
     }
 
-    const items = listSourceItems(d as CopyableDir);
+    const items = listSourceItems(source, d as CopyableDir);
 
     if (items.length === 0) {
       dirs[d] = [];
@@ -126,6 +154,9 @@ export async function sync(): Promise<void> {
 
   // Detect changes
   const changes: string[] = [];
+  if (cfg.source !== source) {
+    changes.push(`source: ${cfg.source} → ${source}`);
+  }
   for (const f of COPYABLE_FILES) {
     if (cfg.files[f] !== files[f]) {
       changes.push(
@@ -157,6 +188,7 @@ export async function sync(): Promise<void> {
       task: async () => {
         updateConfig(
           target,
+          source,
           files as Record<CopyableFile, boolean>,
           dirs as Record<CopyableDir, string[]>,
         );

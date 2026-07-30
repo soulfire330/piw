@@ -25,7 +25,7 @@ export function ensureProfilesDir(): void {
   }
 }
 
-/** Default config: nothing copied */
+/** Default config: nothing copied, source = base */
 export function defaultConfig(): ProfileConfig {
   const files: Record<string, boolean> = {};
   for (const f of COPYABLE_FILES) files[f] = false;
@@ -36,6 +36,7 @@ export function defaultConfig(): ProfileConfig {
   return {
     name: "",
     createdAt: "",
+    source: "base",
     files: files as Record<CopyableFile, boolean>,
     dirs: dirs as Record<CopyableDir, string[]>,
   };
@@ -95,6 +96,7 @@ export function listProfiles(): ProfileInfo[] {
 /** Create a new profile */
 export function createProfile(
   name: string,
+  source: string,
   files: Record<CopyableFile, boolean>,
   dirs: Record<CopyableDir, string[]>,
 ): ProfileConfig {
@@ -106,6 +108,7 @@ export function createProfile(
   const config: ProfileConfig = {
     name,
     createdAt: new Date().toISOString(),
+    source,
     files: { ...files },
     dirs: { ...dirs },
   };
@@ -123,7 +126,7 @@ export function createProfile(
   applyAuth(name);
 
   // Apply copies
-  applyAll(name, files, dirs);
+  applyAll(name, source, files, dirs);
 
   return config;
 }
@@ -155,30 +158,33 @@ export function renameProfile(oldName: string, newName: string): void {
 /** Update config and re-apply all copies */
 export function updateConfig(
   name: string,
+  source: string,
   files: Record<CopyableFile, boolean>,
   dirs: Record<CopyableDir, string[]>,
 ): void {
   const cfg = readProfile(name);
   if (!cfg) throw new Error(`Profile "${name}" not found`);
 
+  cfg.source = source;
   cfg.files = { ...files };
   cfg.dirs = { ...dirs };
   writeProfile(name, cfg);
 
   applyAuth(name);
-  applyAll(name, files, dirs);
+  applyAll(name, source, files, dirs);
 }
 
 /** Apply all copies for a profile */
 function applyAll(
   name: string,
+  source: string,
   files: Record<CopyableFile, boolean>,
   dirs: Record<CopyableDir, string[]>,
 ): void {
   for (const f of COPYABLE_FILES) {
-    applyCopy(name, f, files[f] ? undefined : null);
+    applyCopy(name, source, f, files[f] ? undefined : null);
   }
   for (const d of COPYABLE_DIRS) {
-    applyCopy(name, d, dirs[d]);
+    applyCopy(name, source, d, dirs[d]);
   }
 }

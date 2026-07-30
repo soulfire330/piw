@@ -4,7 +4,7 @@ import { COPYABLE_DIRS, COPYABLE_FILES, COPYABLE_LABELS } from "../types.js";
 import { listProfiles } from "../utils/profile.js";
 
 function fileDesc(on: boolean): string {
-  return on ? "copy from base" : "none";
+  return on ? "copy" : "none";
 }
 
 function dirDesc(items: string[]): string {
@@ -27,8 +27,10 @@ export async function list(): Promise<void> {
   log.info(`Found ${profiles.length} profile(s):\n`);
 
   for (const p of profiles) {
+    const src = p.config.source === "base" ? "Base" : p.config.source;
     const lines: string[] = [
       `▸ ${p.name}`,
+      `  Source: ${src}`,
       `  Created: ${new Date(p.createdAt).toLocaleDateString()}`,
     ];
 

@@ -22,6 +22,11 @@ export function profilePath(name: string): string {
   return `${process.env.HOME}/.pi/profiles/${name}`;
 }
 
+/** Resolve the source directory for a given source name */
+export function sourceDir(source: string): string {
+  return source === "base" ? BASE : profilePath(source);
+}
+
 /** Always symlink auth.json from base */
 export function applyAuth(name: string): void {
   const dest = join(profilePath(name), "auth.json");
@@ -41,29 +46,28 @@ function clear(dest: string): void {
 }
 
 /**
- * Apply copy for a resource.
+ * Apply copy for a resource from a given source.
  * For files: items = undefined → copy the file, items = null → skip.
  * For dirs: items = string[] → copy only those items, [] → empty dir.
  */
 export function applyCopy(
   name: string,
+  source: string,
   key: CopyableFile | CopyableDir,
   items: string[] | null | undefined,
 ): void {
   const dest = join(profilePath(name), key);
   clear(dest);
 
-  if (items === null) return; // skip
+  if (items === null) return;
 
-  const src = join(BASE, key);
+  const src = join(sourceDir(source), key);
 
   if (items === undefined) {
-    // files: copy whole file
     if (existsSync(src)) cpSync(src, dest);
     return;
   }
 
-  // dirs: per-item copy
   mkdirSync(dest, { recursive: true });
   for (const item of items) {
     const srcItem = join(src, item);
@@ -72,10 +76,10 @@ export function applyCopy(
   }
 }
 
-/** List items in base for a given directory key */
-export function listSourceItems(key: CopyableDir): string[] {
+/** List items in a source for a given directory key */
+export function listSourceItems(source: string, key: CopyableDir): string[] {
   if (!COPYABLE_DIRS.includes(key as never)) return [];
-  const dir = join(BASE, key);
+  const dir = join(sourceDir(source), key);
   if (!existsSync(dir)) return [];
   try {
     return readdirSync(dir, { withFileTypes: true })

@@ -30,9 +30,11 @@ export const COPYABLE_LABELS: Record<CopyableFile | CopyableDir, string> = {
 export interface ProfileConfig {
   name: string;
   createdAt: string; // ISO date
-  /** Files to copy from base (false = skip) */
+  /** Where to copy from: "base" or a profile name */
+  source: string;
+  /** Files to copy (false = skip) */
   files: Record<CopyableFile, boolean>;
-  /** Directory items to copy from base (empty = none) */
+  /** Directory items to copy (empty = none) */
   dirs: Record<CopyableDir, string[]>;
 }
 
