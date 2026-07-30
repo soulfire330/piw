@@ -32,7 +32,6 @@ function buildOptions(
 ): Array<{ value: string; label: string; hint?: string }> {
   const options: Array<{ value: string; label: string; hint?: string }> = [];
 
-  // Base
   options.push({
     value: "base:inherit",
     label: "Base → Inherit (symlink)",
@@ -44,7 +43,6 @@ function buildOptions(
     hint: "copy from ~/.pi/agent/",
   });
 
-  // Existing profiles
   for (const p of profiles) {
     options.push({
       value: `${p}:inherit`,
@@ -56,7 +54,6 @@ function buildOptions(
     });
   }
 
-  // None
   options.push({
     value: "none",
     label: "None (empty placeholder)",
@@ -65,11 +62,6 @@ function buildOptions(
 
   return options;
 }
-
-const ALL_KEYS: InheritableKey[] = [
-  ...INHERITABLE_FILES,
-  ...INHERITABLE_DIRS,
-] as InheritableKey[];
 
 export async function create(): Promise<void> {
   intro("piw — Create Profile");
@@ -93,7 +85,7 @@ export async function create(): Promise<void> {
   const profiles = listAllProfileDirs();
   const inherits: Record<string, InheritEntry | null> = {};
 
-  // Bulk choice first
+  // Bulk options for config files
   const bulkOptions: Array<{ value: string; label: string; hint?: string }> = [
     {
       value: "base:inherit",
@@ -140,36 +132,17 @@ export async function create(): Promise<void> {
     return;
   }
 
+  const dirOptions = buildOptions(profiles);
+
+  // Phase 1: config files (auth.json, models.json, settings.json, keybindings.json)
   if (bulk !== "_custom") {
-    // Use bulk as default, but still let user override per-resource
-    const perResourceOptions = buildOptions(profiles);
-
-    for (const key of ALL_KEYS) {
-      // Put the bulk choice first so it's the default (Enter to accept)
-      const reordered = [
-        ...perResourceOptions.filter((o) => o.value === bulk),
-        ...perResourceOptions.filter((o) => o.value !== bulk),
-      ];
-
-      const entry = await select({
-        message: `${INHERIT_LABELS[key]} — where from?`,
-        options: reordered,
-      });
-
-      if (isCancel(entry)) {
-        cancel("Cancelled");
-        return;
-      }
-
-      inherits[key] = decodeEntry(entry as string);
-    }
+    const entry = decodeEntry(bulk as string);
+    for (const key of INHERITABLE_FILES) inherits[key] = entry;
   } else {
-    // Per-resource
-    const options = buildOptions(profiles);
-    for (const key of ALL_KEYS) {
+    for (const key of INHERITABLE_FILES) {
       const entry = await select({
-        message: `${INHERIT_LABELS[key]} — where from?`,
-        options,
+        message: `${INHERIT_LABELS[key as InheritableKey]} — where from?`,
+        options: dirOptions,
       });
 
       if (isCancel(entry)) {
@@ -179,6 +152,21 @@ export async function create(): Promise<void> {
 
       inherits[key] = decodeEntry(entry as string);
     }
+  }
+
+  // Phase 2: directories (extensions, skills, prompts, themes) — always individual
+  for (const key of INHERITABLE_DIRS) {
+    const entry = await select({
+      message: `${INHERIT_LABELS[key as InheritableKey]} — where from?`,
+      options: dirOptions,
+    });
+
+    if (isCancel(entry)) {
+      cancel("Cancelled");
+      return;
+    }
+
+    inherits[key] = decodeEntry(entry as string);
   }
 
   const proceed = await confirm({
