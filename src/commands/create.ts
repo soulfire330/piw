@@ -17,50 +17,49 @@ import {
 } from "../types.js";
 import { createProfile, listAllProfileDirs } from "../utils/profile.js";
 
-/** Parse a flat string value back to InheritEntry | null */
-function decodeEntry(raw: string): InheritEntry | null {
-  if (raw === "none") return null;
-  const sep = raw.lastIndexOf(":");
-  const source = raw.slice(0, sep);
-  const action = raw.slice(sep + 1) as "copy" | "inherit";
-  return { source, action };
-}
-
-/** Build select options for a single resource */
-function buildOptions(
+/** Build source-select options (Base, profiles, None) */
+function sourceOptions(
   profiles: string[],
 ): Array<{ value: string; label: string; hint?: string }> {
-  const options: Array<{ value: string; label: string; hint?: string }> = [];
-
-  options.push({
-    value: "base:inherit",
-    label: "Base → Inherit (symlink)",
-    hint: "link to ~/.pi/agent/",
-  });
-  options.push({
-    value: "base:copy",
-    label: "Base → Copy",
-    hint: "copy from ~/.pi/agent/",
-  });
-
+  const home = process.env.HOME ?? "~";
+  const options: Array<{ value: string; label: string; hint?: string }> = [
+    { value: "base", label: "Base", hint: `${home}/.pi/agent/` },
+  ];
   for (const p of profiles) {
     options.push({
-      value: `${p}:inherit`,
-      label: `${p} → Inherit (symlink)`,
-    });
-    options.push({
-      value: `${p}:copy`,
-      label: `${p} → Copy`,
+      value: p,
+      label: p,
+      hint: `${home}/.pi/profiles/${p}/`,
     });
   }
+  options.push({ value: "none", label: "None", hint: "empty placeholder" });
+  return options;
+}
 
-  options.push({
-    value: "none",
-    label: "None (empty placeholder)",
-    hint: "create empty, skip for files",
+/** Prompt source then action, returning InheritEntry | null (null = None).
+ *  Returns undefined if user cancelled. */
+async function pickEntry(
+  profiles: string[],
+  message: string,
+): Promise<InheritEntry | null | undefined> {
+  const source = await select({
+    message: `${message} — from?`,
+    options: sourceOptions(profiles),
   });
 
-  return options;
+  if (isCancel(source)) return undefined;
+  if (source === "none") return null;
+
+  const action = await select({
+    message: `${message} — how?`,
+    options: [
+      { value: "inherit", label: "Inherit (symlink)", hint: "link to source" },
+      { value: "copy", label: "Copy", hint: "copy from source" },
+    ],
+  });
+
+  if (isCancel(action)) return undefined;
+  return { source: source as string, action: action as "copy" | "inherit" };
 }
 
 export async function create(): Promise<void> {
@@ -85,88 +84,74 @@ export async function create(): Promise<void> {
   const profiles = listAllProfileDirs();
   const inherits: Record<string, InheritEntry | null> = {};
 
-  // Bulk options for config files
-  const bulkOptions: Array<{ value: string; label: string; hint?: string }> = [
-    {
-      value: "base:inherit",
-      label: "Base → Inherit (symlink)",
-      hint: "all linked from ~/.pi/agent/",
-    },
-    {
-      value: "base:copy",
-      label: "Base → Copy",
-      hint: "all copied from ~/.pi/agent/",
-    },
-  ];
-
-  const home = process.env.HOME ?? "~";
-  for (const p of profiles) {
-    bulkOptions.push({
-      value: `${p}:inherit`,
-      label: `${p} → Inherit (symlink)`,
-      hint: `all linked from ${home}/.pi/profiles/${p}/`,
-    });
-    bulkOptions.push({
-      value: `${p}:copy`,
-      label: `${p} → Copy`,
-      hint: `all copied from ${home}/.pi/profiles/${p}/`,
-    });
-  }
-
-  bulkOptions.push(
-    { value: "none", label: "None", hint: "all empty placeholders" },
-    {
-      value: "_custom",
-      label: "Select independently...",
-      hint: "per-resource choice",
-    },
-  );
-
-  const bulk = await select({
-    message: "Base configuration — where from?",
-    options: bulkOptions,
+  // Phase 1: Bulk for config files
+  const bulkSource = await select({
+    message: "Base configuration — from?",
+    options: [
+      ...sourceOptions(profiles).filter((o) => o.value !== "none"),
+      {
+        value: "_custom",
+        label: "Select independently...",
+        hint: "per-file choice",
+      },
+    ],
   });
 
-  if (isCancel(bulk)) {
+  if (isCancel(bulkSource)) {
     cancel("Cancelled");
     return;
   }
 
-  const dirOptions = buildOptions(profiles);
-
-  // Phase 1: config files (auth.json, models.json, settings.json, keybindings.json)
-  if (bulk !== "_custom") {
-    const entry = decodeEntry(bulk as string);
-    for (const key of INHERITABLE_FILES) inherits[key] = entry;
-  } else {
+  if (bulkSource === "_custom") {
+    // Per-file
     for (const key of INHERITABLE_FILES) {
-      const entry = await select({
-        message: `${INHERIT_LABELS[key as InheritableKey]} — where from?`,
-        options: dirOptions,
-      });
-
-      if (isCancel(entry)) {
+      const entry = await pickEntry(
+        profiles,
+        INHERIT_LABELS[key as InheritableKey],
+      );
+      if (entry === undefined) {
         cancel("Cancelled");
         return;
       }
-
-      inherits[key] = decodeEntry(entry as string);
+      inherits[key] = entry;
     }
-  }
-
-  // Phase 2: directories (extensions, skills, prompts, themes) — always individual
-  for (const key of INHERITABLE_DIRS) {
-    const entry = await select({
-      message: `${INHERIT_LABELS[key as InheritableKey]} — where from?`,
-      options: dirOptions,
+  } else {
+    // Bulk: ask action, apply to all files
+    const action = await select({
+      message: "Base configuration — how?",
+      options: [
+        {
+          value: "inherit",
+          label: "Inherit (symlink)",
+          hint: "links to source",
+        },
+        { value: "copy", label: "Copy", hint: "copies from source" },
+      ],
     });
 
-    if (isCancel(entry)) {
+    if (isCancel(action)) {
       cancel("Cancelled");
       return;
     }
 
-    inherits[key] = decodeEntry(entry as string);
+    const entry: InheritEntry = {
+      source: bulkSource as string,
+      action: action as "copy" | "inherit",
+    };
+    for (const key of INHERITABLE_FILES) inherits[key] = entry;
+  }
+
+  // Phase 2: Directories — always individual
+  for (const key of INHERITABLE_DIRS) {
+    const entry = await pickEntry(
+      profiles,
+      INHERIT_LABELS[key as InheritableKey],
+    );
+    if (entry === undefined) {
+      cancel("Cancelled");
+      return;
+    }
+    inherits[key] = entry;
   }
 
   const proceed = await confirm({

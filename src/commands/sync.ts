@@ -20,12 +20,11 @@ import {
   updateInherits,
 } from "../utils/profile.js";
 
-/** Human-readable label for an InheritEntry */
 function entryLabel(entry: InheritEntry | null): string {
   if (entry === null) return "None";
   const src = entry.source === "base" ? "Base" : entry.source;
-  const act = entry.action === "inherit" ? "→ Inherit" : "→ Copy";
-  return `${src} ${act}`;
+  const act = entry.action === "inherit" ? "symlink" : "copy";
+  return `${src}/${act}`;
 }
 
 const ALL_KEYS: InheritableKey[] = [
@@ -48,10 +47,7 @@ export async function sync(): Promise<void> {
 
   const target = await select({
     message: "Select profile to manage:",
-    options: profiles.map((p) => ({
-      value: p.name,
-      label: p.name,
-    })),
+    options: profiles.map((p) => ({ value: p.name, label: p.name })),
   });
 
   if (isCancel(target)) {
@@ -67,7 +63,7 @@ export async function sync(): Promise<void> {
     return;
   }
 
-  const dirs = listAllProfileDirs();
+  const dirs = listAllProfileDirs().filter((d) => d !== target);
   const changes: string[] = [];
   const newInherits: Record<InheritableKey, InheritEntry | null> = {
     ...cfg.inherits,
@@ -77,54 +73,49 @@ export async function sync(): Promise<void> {
     const current = newInherits[key] ?? null;
     const currentLabel = entryLabel(current);
 
-    const choice = await select({
-      message: `${INHERIT_LABELS[key]}`,
+    const source = await select({
+      message: `${INHERIT_LABELS[key]} — currently ${currentLabel}`,
       options: [
-        {
-          value: "keep",
-          label: `Keep current (${currentLabel})`,
-        },
-        {
-          value: "base:inherit",
-          label: "Base → Inherit (symlink)",
-        },
-        {
-          value: "base:copy",
-          label: "Base → Copy",
-        },
-        ...dirs
-          .filter((d) => d !== target)
-          .flatMap((d) => [
-            { value: `${d}:inherit`, label: `${d} → Inherit (symlink)` },
-            { value: `${d}:copy`, label: `${d} → Copy` },
-          ]),
-        {
-          value: "none",
-          label: "None (empty placeholder)",
-        },
+        { value: "keep", label: `Keep current (${currentLabel})` },
+        { value: "base", label: "Base (~/.pi/agent/)" },
+        ...dirs.map((d) => ({ value: d, label: d })),
+        { value: "none", label: "None" },
       ],
     });
 
-    if (isCancel(choice)) {
+    if (isCancel(source)) {
       cancel("Cancelled");
       return;
     }
 
-    if (choice === "keep") continue;
+    if (source === "keep") continue;
+    if (source === "none") {
+      changes.push(`${INHERIT_LABELS[key]}: ${currentLabel} → None`);
+      newInherits[key] = null;
+      continue;
+    }
 
-    const prev = currentLabel;
-    newInherits[key] =
-      choice === "none"
-        ? null
-        : {
-            source: choice.slice(0, choice.lastIndexOf(":")),
-            action: choice.slice(choice.lastIndexOf(":") + 1) as
-              | "copy"
-              | "inherit",
-          };
+    const action = await select({
+      message: `${INHERIT_LABELS[key]} — how?`,
+      options: [
+        { value: "inherit", label: "Inherit (symlink)" },
+        { value: "copy", label: "Copy" },
+      ],
+    });
+
+    if (isCancel(action)) {
+      cancel("Cancelled");
+      return;
+    }
+
+    const entry: InheritEntry = {
+      source: source as string,
+      action: action as "copy" | "inherit",
+    };
     changes.push(
-      `${INHERIT_LABELS[key]}: ${prev} → ${entryLabel(newInherits[key])}`,
+      `${INHERIT_LABELS[key]}: ${currentLabel} → ${entryLabel(entry)}`,
     );
+    newInherits[key] = entry;
   }
 
   if (changes.length === 0) {
