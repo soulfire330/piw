@@ -107,14 +107,17 @@ export async function create(): Promise<void> {
     },
   ];
 
+  const home = process.env.HOME ?? "~";
   for (const p of profiles) {
     bulkOptions.push({
       value: `${p}:inherit`,
       label: `${p} → Inherit (symlink)`,
+      hint: `all linked from ${home}/.pi/profiles/${p}/`,
     });
     bulkOptions.push({
       value: `${p}:copy`,
       label: `${p} → Copy`,
+      hint: `all copied from ${home}/.pi/profiles/${p}/`,
     });
   }
 
