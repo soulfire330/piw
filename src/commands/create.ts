@@ -141,9 +141,28 @@ export async function create(): Promise<void> {
   }
 
   if (bulk !== "_custom") {
-    // Apply bulk to all
-    const entry = decodeEntry(bulk as string);
-    for (const key of ALL_KEYS) inherits[key] = entry;
+    // Use bulk as default, but still let user override per-resource
+    const perResourceOptions = buildOptions(profiles);
+
+    for (const key of ALL_KEYS) {
+      // Put the bulk choice first so it's the default (Enter to accept)
+      const reordered = [
+        ...perResourceOptions.filter((o) => o.value === bulk),
+        ...perResourceOptions.filter((o) => o.value !== bulk),
+      ];
+
+      const entry = await select({
+        message: `${INHERIT_LABELS[key]} — where from?`,
+        options: reordered,
+      });
+
+      if (isCancel(entry)) {
+        cancel("Cancelled");
+        return;
+      }
+
+      inherits[key] = decodeEntry(entry as string);
+    }
   } else {
     // Per-resource
     const options = buildOptions(profiles);
