@@ -5,6 +5,8 @@ import { install } from "./commands/install.js";
 import { list } from "./commands/list.js";
 import { rename } from "./commands/rename.js";
 import { sync } from "./commands/sync.js";
+import { listProfiles } from "./utils/profile.js";
+import { profilePath } from "./utils/symlinks.js";
 
 const MODES: Record<
   string,
@@ -63,6 +65,23 @@ async function main(): Promise<void> {
     return;
   }
 
+  // If the argument matches a profile name, launch pi in that profile
+  if (cmd) {
+    const profiles = listProfiles();
+    const match = profiles.find((p) => p.name === cmd);
+    if (match) {
+      const dir = profilePath(match.name);
+      console.log(`Launching pi with profile "${match.name}"...`);
+      const proc = Bun.spawn(["pi", ...process.argv.slice(3)], {
+        env: { ...process.env, PI_CODING_AGENT_DIR: dir },
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      process.exit(await proc.exited);
+    }
+  }
+
   if (cmd === "--help" || cmd === "-h") {
     console.log("piw — Interactive Pi Profile Manager");
     console.log("");
@@ -74,6 +93,7 @@ async function main(): Promise<void> {
     console.log("  piw rename         Rename a profile");
     console.log("  piw sync           Toggle inheritance");
     console.log("  piw install <pkg>  Install a package into a profile");
+    console.log("  piw <profile>       Launch pi with a specific profile");
     return;
   }
 
