@@ -9,7 +9,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { InheritableKey } from "../types.js";
+import type { InheritableKey, InheritEntry } from "../types.js";
 import { INHERITABLE_DIRS } from "../types.js";
 
 const BASE = `${process.env.HOME}/.pi/agent`;
@@ -29,43 +29,62 @@ function resourcePath(profile: string, key: InheritableKey): string {
   return join(profilePath(profile), key);
 }
 
-/** Create a symlink from profile/<key> -> ~/.pi/agent/<key> */
-export function inheritResource(profile: string, key: InheritableKey): void {
-  const dest = resourcePath(profile, key);
-  const src = join(BASE, key);
-
-  // Remove existing if present
-  if (existsSync(dest)) {
-    if (lstatSync(dest).isSymbolicLink()) {
-      unlinkSync(dest);
-    } else {
-      rmSync(dest, { recursive: true, force: true });
-    }
+/** Resolve source path for a given entry */
+function sourcePath(entry: InheritEntry, key: InheritableKey): string {
+  if (entry.source === "base") {
+    return join(BASE, key);
   }
-
-  symlinkSync(src, dest);
+  return join(profilePath(entry.source), key);
 }
 
-/** Remove symlink and replace with a local copy from base */
-export function localizeResource(profile: string, key: InheritableKey): void {
-  const dest = resourcePath(profile, key);
-  const src = join(BASE, key);
-
-  // Only act if it's currently a symlink or missing
-  if (existsSync(dest)) {
-    if (!lstatSync(dest).isSymbolicLink()) return; // already local
+/** Remove existing resource at dest (symlink or real) */
+function clearResource(dest: string): void {
+  if (!existsSync(dest)) return;
+  if (lstatSync(dest).isSymbolicLink()) {
     unlinkSync(dest);
-  }
-
-  // Copy from base
-  if (existsSync(src)) {
-    cpSync(src, dest, { recursive: true });
   } else {
-    // Base resource doesn't exist — create empty
+    rmSync(dest, { recursive: true, force: true });
+  }
+}
+
+/** Apply an InheritEntry to a profile key.
+ *  null = "none" → create empty dir or skip for files. */
+export function applyInheritEntry(
+  profile: string,
+  key: InheritableKey,
+  entry: InheritEntry | null,
+): void {
+  const dest = resourcePath(profile, key);
+  clearResource(dest);
+
+  if (entry === null) {
+    // None: create empty directory for dirs, skip files
     if (INHERITABLE_DIRS.includes(key as never)) {
       mkdirSync(dest, { recursive: true });
     }
-    // Files: skip if base doesn't have them
+    return;
+  }
+
+  const src = sourcePath(entry, key);
+
+  if (entry.action === "inherit") {
+    if (!existsSync(src)) {
+      // Source doesn't exist — fall back to empty placeholder
+      if (INHERITABLE_DIRS.includes(key as never)) {
+        mkdirSync(dest, { recursive: true });
+      }
+      return;
+    }
+    symlinkSync(src, dest);
+  } else {
+    // copy
+    if (existsSync(src)) {
+      cpSync(src, dest, { recursive: true });
+    } else {
+      if (INHERITABLE_DIRS.includes(key as never)) {
+        mkdirSync(dest, { recursive: true });
+      }
+    }
   }
 }
 

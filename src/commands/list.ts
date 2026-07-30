@@ -1,6 +1,14 @@
 import { intro, log, outro } from "@clack/prompts";
+import type { InheritableKey, InheritEntry } from "../types.js";
 import { listProfiles } from "../utils/profile.js";
 import { isInherited } from "../utils/symlinks.js";
+
+function entryDesc(entry: InheritEntry | null): string {
+  if (entry === null) return "none";
+  const src = entry.source === "base" ? "Base" : entry.source;
+  const act = entry.action === "inherit" ? "symlink" : "copy";
+  return `${src}/${act}`;
+}
 
 export async function list(): Promise<void> {
   intro("piw — Profiles");
@@ -17,30 +25,23 @@ export async function list(): Promise<void> {
   log.info(`Found ${profiles.length} profile(s):\n`);
 
   for (const p of profiles) {
-    const inherited: string[] = [];
-    const local: string[] = [];
+    const lines: string[] = [
+      `▸ ${p.name}`,
+      `  Created: ${new Date(p.createdAt).toLocaleDateString()}`,
+    ];
 
-    for (const [key, val] of Object.entries(p.inherits)) {
-      const actual = isInherited(p.name, key as never);
-      if (val && actual) {
-        inherited.push(key);
-      } else if (!val && !actual) {
-        local.push(key);
-      } else {
-        // Config doesn't match reality — show mismatch
-        local.push(`${key} (mismatch: config=${val}, disk=${actual})`);
-      }
+    for (const [key, val] of Object.entries(p.inherits) as [
+      InheritableKey,
+      InheritEntry | null,
+    ][]) {
+      const isLink = isInherited(p.name, key);
+      const config = entryDesc(val);
+      const disk = isLink ? "symlink" : "local";
+      const mismatch = (val?.action === "inherit") !== isLink ? " ⚠️" : "";
+      lines.push(`  ${key}: ${config} (${disk})${mismatch}`);
     }
 
-    log.message(
-      [
-        `▸ ${p.name}`,
-        `  Created: ${new Date(p.createdAt).toLocaleDateString()}`,
-        `  Inherited (symlinked): ${inherited.length ? inherited.join(", ") : "none"}`,
-        `  Local: ${local.length ? local.join(", ") : "none"}`,
-        "",
-      ].join("\n"),
-    );
+    log.message(`${lines.join("\n")}\n`);
   }
 
   outro("Done");

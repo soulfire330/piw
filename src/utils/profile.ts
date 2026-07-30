@@ -8,13 +8,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { ProfileConfig, ProfileInfo } from "../types.js";
-import {
-  INHERITABLE_DIRS,
-  INHERITABLE_FILES,
-  type InheritableKey,
+import type {
+  InheritableKey,
+  InheritEntry,
+  ProfileConfig,
+  ProfileInfo,
 } from "../types.js";
-import { inheritResource, localizeResource, profilePath } from "./symlinks.js";
+import { INHERITABLE_DIRS, INHERITABLE_FILES } from "../types.js";
+import { applyInheritEntry, profilePath } from "./symlinks.js";
 
 const PROFILES_DIR = `${process.env.HOME}/.pi/profiles`;
 
@@ -25,12 +26,13 @@ export function ensureProfilesDir(): void {
   }
 }
 
-/** Default inheritance: everything except identity files */
-export function defaultInherits(): Record<InheritableKey, boolean> {
-  const defaults: Record<string, boolean> = {};
-  for (const f of INHERITABLE_FILES) defaults[f] = true;
-  for (const d of INHERITABLE_DIRS) defaults[d] = true;
-  return defaults as Record<InheritableKey, boolean>;
+/** Default inheritance: everything inherited from base via symlink */
+export function defaultInherits(): Record<InheritableKey, InheritEntry> {
+  const defaults: Record<string, InheritEntry> = {};
+  const base: InheritEntry = { source: "base", action: "inherit" };
+  for (const f of INHERITABLE_FILES) defaults[f] = base;
+  for (const d of INHERITABLE_DIRS) defaults[d] = base;
+  return defaults as Record<InheritableKey, InheritEntry>;
 }
 
 /** Read a profile's profile.json */
@@ -72,7 +74,6 @@ export function listProfiles(): ProfileInfo[] {
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const cfg = readProfile(entry.name);
-    // Skip profiles not managed by piw (no inherits field)
     if (!cfg?.inherits) continue;
     profiles.push({
       name: cfg.name,
@@ -88,7 +89,7 @@ export function listProfiles(): ProfileInfo[] {
 /** Create a new profile */
 export function createProfile(
   name: string,
-  inherits: Record<InheritableKey, boolean>,
+  inherits: Record<InheritableKey, InheritEntry | null>,
 ): ProfileConfig {
   ensureProfilesDir();
 
@@ -101,15 +102,12 @@ export function createProfile(
     inherits,
   };
 
-  // Create dir and write profile.json
   mkdirSync(dir, { recursive: true });
   writeProfile(name, config);
 
-  // Create local-only directories
+  // Always-local: sessions, memory, identity files
   mkdirSync(join(dir, "sessions"), { recursive: true });
   mkdirSync(join(dir, "memory"), { recursive: true });
-
-  // Create identity files (always local, empty)
   writeFileSync(join(dir, "AGENTS.md"), "");
   writeFileSync(join(dir, "APPEND_SYSTEM.md"), "");
 
@@ -118,11 +116,7 @@ export function createProfile(
     ...INHERITABLE_FILES,
     ...INHERITABLE_DIRS,
   ] as InheritableKey[]) {
-    if (inherits[key]) {
-      inheritResource(name, key);
-    } else {
-      localizeResource(name, key);
-    }
+    applyInheritEntry(name, key, inherits[key] ?? null);
   }
 
   return config;
@@ -143,10 +137,8 @@ export function renameProfile(oldName: string, newName: string): void {
   if (existsSync(newDir))
     throw new Error(`Profile "${newName}" already exists`);
 
-  // Rename the directory
   renameSync(oldDir, newDir);
 
-  // Update profile.json
   const cfg = readProfile(newName);
   if (cfg) {
     cfg.name = newName;
@@ -154,31 +146,21 @@ export function renameProfile(oldName: string, newName: string): void {
   }
 }
 
-/** Update inheritance for a profile: toggle which resources are symlinked */
+/** Update inheritance for a profile: apply new entries, diffing against old */
 export function updateInherits(
   name: string,
-  inherits: Record<InheritableKey, boolean>,
+  inherits: Record<InheritableKey, InheritEntry | null>,
 ): void {
   const cfg = readProfile(name);
   if (!cfg) throw new Error(`Profile "${name}" not found`);
 
-  const oldInherits = { ...cfg.inherits };
   cfg.inherits = { ...inherits };
   writeProfile(name, cfg);
 
-  // Apply changes: for each key that changed, flip the symlink
   for (const key of [
     ...INHERITABLE_FILES,
     ...INHERITABLE_DIRS,
   ] as InheritableKey[]) {
-    const was = oldInherits[key];
-    const now = inherits[key];
-    if (was !== now) {
-      if (now) {
-        inheritResource(name, key);
-      } else {
-        localizeResource(name, key);
-      }
-    }
+    applyInheritEntry(name, key, inherits[key] ?? null);
   }
 }

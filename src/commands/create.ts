@@ -1,25 +1,75 @@
 import {
   cancel,
   confirm,
-  groupMultiselect,
   intro,
   isCancel,
   log,
   outro,
+  select,
   tasks,
   text,
 } from "@clack/prompts";
+import type { InheritableKey, InheritEntry } from "../types.js";
 import {
   INHERIT_LABELS,
   INHERITABLE_DIRS,
   INHERITABLE_FILES,
-  type InheritableKey,
 } from "../types.js";
-import { createProfile, defaultInherits } from "../utils/profile.js";
+import { createProfile, listAllProfileDirs } from "../utils/profile.js";
 
-function inheritOption(key: InheritableKey) {
-  return { value: key, label: INHERIT_LABELS[key] };
+/** Parse a flat string value back to InheritEntry | null */
+function decodeEntry(raw: string): InheritEntry | null {
+  if (raw === "none") return null;
+  const sep = raw.lastIndexOf(":");
+  const source = raw.slice(0, sep);
+  const action = raw.slice(sep + 1) as "copy" | "inherit";
+  return { source, action };
 }
+
+/** Build select options for a single resource */
+function buildOptions(
+  profiles: string[],
+): Array<{ value: string; label: string; hint?: string }> {
+  const options: Array<{ value: string; label: string; hint?: string }> = [];
+
+  // Base
+  options.push({
+    value: "base:inherit",
+    label: "Base → Inherit (symlink)",
+    hint: "link to ~/.pi/agent/",
+  });
+  options.push({
+    value: "base:copy",
+    label: "Base → Copy",
+    hint: "copy from ~/.pi/agent/",
+  });
+
+  // Existing profiles
+  for (const p of profiles) {
+    options.push({
+      value: `${p}:inherit`,
+      label: `${p} → Inherit (symlink)`,
+    });
+    options.push({
+      value: `${p}:copy`,
+      label: `${p} → Copy`,
+    });
+  }
+
+  // None
+  options.push({
+    value: "none",
+    label: "None (empty placeholder)",
+    hint: "create empty, skip for files",
+  });
+
+  return options;
+}
+
+const ALL_KEYS: InheritableKey[] = [
+  ...INHERITABLE_FILES,
+  ...INHERITABLE_DIRS,
+] as InheritableKey[];
 
 export async function create(): Promise<void> {
   intro("piw — Create Profile");
@@ -40,30 +90,24 @@ export async function create(): Promise<void> {
     return;
   }
 
-  const defaults = defaultInherits();
-  const defaultKeys = (Object.keys(defaults) as InheritableKey[]).filter(
-    (k) => defaults[k],
-  );
+  const profiles = listAllProfileDirs();
+  const options = buildOptions(profiles);
+  const inherits: Record<string, InheritEntry | null> = {};
 
-  const selected = await groupMultiselect({
-    message: "Choose what to inherit from base Pi (~/.pi/agent/):",
-    options: {
-      Files: INHERITABLE_FILES.map(inheritOption),
-      Directories: INHERITABLE_DIRS.map(inheritOption),
-    },
-    initialValues: defaultKeys,
-    required: false,
-  });
+  // Prompt per resource
+  for (const key of ALL_KEYS) {
+    const entry = await select({
+      message: `${INHERIT_LABELS[key]} — where from?`,
+      options,
+    });
 
-  if (isCancel(selected)) {
-    cancel("Cancelled");
-    return;
+    if (isCancel(entry)) {
+      cancel("Cancelled");
+      return;
+    }
+
+    inherits[key] = decodeEntry(entry as string);
   }
-
-  const inherits: Record<InheritableKey, boolean> = { ...defaults };
-  for (const key of Object.keys(inherits) as InheritableKey[])
-    inherits[key] = false;
-  for (const s of selected) inherits[s as InheritableKey] = true;
 
   const proceed = await confirm({
     message: `Create profile "${name}"?`,
@@ -80,12 +124,15 @@ export async function create(): Promise<void> {
     {
       title: `Creating profile "${name}"`,
       task: async () => {
-        createProfile(name, inherits);
+        createProfile(
+          name,
+          inherits as Record<InheritableKey, InheritEntry | null>,
+        );
         return `Profile "${name}" created at ~/.pi/profiles/${name}/`;
       },
     },
   ]);
 
-  log.success(`Launch with: pi-profile ${name}`);
+  log.success(`Launch with: piw ${name}`);
   outro("Done");
 }

@@ -1,6 +1,5 @@
 import {
   cancel,
-  groupMultiselect,
   intro,
   isCancel,
   log,
@@ -8,21 +7,41 @@ import {
   select,
   tasks,
 } from "@clack/prompts";
+import type { InheritableKey, InheritEntry } from "../types.js";
 import {
   INHERIT_LABELS,
   INHERITABLE_DIRS,
   INHERITABLE_FILES,
-  type InheritableKey,
 } from "../types.js";
-import { listProfiles, readProfile, updateInherits } from "../utils/profile.js";
+import {
+  listAllProfileDirs,
+  listProfiles,
+  readProfile,
+  updateInherits,
+} from "../utils/profile.js";
+
+/** Human-readable label for an InheritEntry */
+function entryLabel(entry: InheritEntry | null): string {
+  if (entry === null) return "None";
+  const src = entry.source === "base" ? "Base" : entry.source;
+  const act = entry.action === "inherit" ? "→ Inherit" : "→ Copy";
+  return `${src} ${act}`;
+}
+
+const ALL_KEYS: InheritableKey[] = [
+  ...INHERITABLE_FILES,
+  ...INHERITABLE_DIRS,
+] as InheritableKey[];
 
 export async function sync(): Promise<void> {
-  intro("piw — Sync Inheritance");
+  intro("piw — Edit Inheritance");
 
   const profiles = listProfiles();
 
   if (profiles.length === 0) {
-    log.warn("No profiles found");
+    log.warn(
+      "No piw-managed profiles found. Create one first, or use 'piw adopt' to convert an existing profile.",
+    );
     outro("Done");
     return;
   }
@@ -32,7 +51,6 @@ export async function sync(): Promise<void> {
     options: profiles.map((p) => ({
       value: p.name,
       label: p.name,
-      hint: `${Object.values(p.inherits).filter(Boolean).length} inherited`,
     })),
   });
 
@@ -49,45 +67,64 @@ export async function sync(): Promise<void> {
     return;
   }
 
-  const currentInherited: InheritableKey[] = [];
-  for (const [key, val] of Object.entries(cfg.inherits)) {
-    if (val) currentInherited.push(key as InheritableKey);
-  }
-
-  const selected = await groupMultiselect({
-    message: "Toggle inheritance (selected = symlinked from base Pi):",
-    options: {
-      Files: INHERITABLE_FILES.map((key) => ({
-        value: key,
-        label: INHERIT_LABELS[key],
-      })),
-      Directories: INHERITABLE_DIRS.map((key) => ({
-        value: key,
-        label: INHERIT_LABELS[key],
-      })),
-    },
-    initialValues: currentInherited,
-    required: false,
-  });
-
-  if (isCancel(selected)) {
-    cancel("Cancelled");
-    return;
-  }
-
-  // Build new inheritance map
-  const newInherits = { ...cfg.inherits };
-  for (const key of Object.keys(newInherits) as InheritableKey[])
-    newInherits[key] = false;
-  for (const s of selected) newInherits[s as InheritableKey] = true;
-
-  // Find what changed
+  const dirs = listAllProfileDirs();
   const changes: string[] = [];
-  for (const [key, was] of Object.entries(cfg.inherits)) {
-    const now = newInherits[key as InheritableKey];
-    if (was !== now) {
-      changes.push(now ? `+ symlink ${key}` : `- localize ${key}`);
+  const newInherits: Record<InheritableKey, InheritEntry | null> = {
+    ...cfg.inherits,
+  };
+
+  for (const key of ALL_KEYS) {
+    const current = newInherits[key] ?? null;
+    const currentLabel = entryLabel(current);
+
+    const choice = await select({
+      message: `${INHERIT_LABELS[key]}`,
+      options: [
+        {
+          value: "keep",
+          label: `Keep current (${currentLabel})`,
+        },
+        {
+          value: "base:inherit",
+          label: "Base → Inherit (symlink)",
+        },
+        {
+          value: "base:copy",
+          label: "Base → Copy",
+        },
+        ...dirs
+          .filter((d) => d !== target)
+          .flatMap((d) => [
+            { value: `${d}:inherit`, label: `${d} → Inherit (symlink)` },
+            { value: `${d}:copy`, label: `${d} → Copy` },
+          ]),
+        {
+          value: "none",
+          label: "None (empty placeholder)",
+        },
+      ],
+    });
+
+    if (isCancel(choice)) {
+      cancel("Cancelled");
+      return;
     }
+
+    if (choice === "keep") continue;
+
+    const prev = currentLabel;
+    newInherits[key] =
+      choice === "none"
+        ? null
+        : {
+            source: choice.slice(0, choice.lastIndexOf(":")),
+            action: choice.slice(choice.lastIndexOf(":") + 1) as
+              | "copy"
+              | "inherit",
+          };
+    changes.push(
+      `${INHERIT_LABELS[key]}: ${prev} → ${entryLabel(newInherits[key])}`,
+    );
   }
 
   if (changes.length === 0) {

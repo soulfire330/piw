@@ -29,16 +29,23 @@ export const INHERIT_LABELS: Record<InheritableKey, string> = {
   themes: "themes/ — themes",
 };
 
+// Per-resource inheritance entry.
+// null → "none" (empty placeholder, don't copy or link anything)
+export interface InheritEntry {
+  source: "base" | string; // "base" or a profile name
+  action: "copy" | "inherit";
+}
+
 // Per-profile metadata stored in ~/.pi/profiles/<name>/profile.json
 export interface ProfileConfig {
   name: string;
   createdAt: string; // ISO date
-  inherits: Record<InheritableKey, boolean>;
+  inherits: Record<InheritableKey, InheritEntry | null>;
 }
 
 export interface ProfileInfo {
   name: string;
   createdAt: string;
   dir: string;
-  inherits: Record<InheritableKey, boolean>;
+  inherits: Record<InheritableKey, InheritEntry | null>;
 }
