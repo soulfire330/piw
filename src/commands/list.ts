@@ -7,7 +7,9 @@ function entryDesc(entry: InheritEntry | null): string {
   if (entry === null) return "none";
   const src = entry.source === "base" ? "Base" : entry.source;
   const act = entry.action === "inherit" ? "symlink" : "copy";
-  return `${src}/${act}`;
+  const count =
+    entry.items !== undefined ? ` (${entry.items.length} items)` : "";
+  return `${src}/${act}${count}`;
 }
 
 export async function list(): Promise<void> {

@@ -1,6 +1,7 @@
 import {
   cancel,
   confirm,
+  groupMultiselect,
   intro,
   isCancel,
   log,
@@ -16,6 +17,7 @@ import {
   INHERITABLE_FILES,
 } from "../types.js";
 import { createProfile, listAllProfileDirs } from "../utils/profile.js";
+import { listSourceItems } from "../utils/symlinks.js";
 
 /** Build source-select options (Base, profiles, None) */
 function sourceOptions(
@@ -62,6 +64,40 @@ async function pickEntry(
   return { source: source as string, action: action as "copy" | "inherit" };
 }
 
+/** Like pickEntry but for directories — adds item-level multiselect. */
+async function pickDirEntry(
+  profiles: string[],
+  key: InheritableKey,
+): Promise<InheritEntry | null | undefined> {
+  const label = INHERIT_LABELS[key];
+  const entry = await pickEntry(profiles, label);
+
+  if (entry === undefined || entry === null) return entry;
+
+  // Scan source for available items
+  const items = listSourceItems(entry, key);
+
+  if (items.length === 0) {
+    // No items in source — just create empty dir
+    entry.items = [];
+    return entry;
+  }
+
+  const selected = await groupMultiselect({
+    message: `Which ${label.split(" ")[0]} to ${entry.action === "inherit" ? "inherit" : "copy"}?`,
+    options: {
+      Items: items.map((item) => ({ value: item, label: item })),
+    },
+    initialValues: items,
+    required: false,
+  });
+
+  if (isCancel(selected)) return undefined;
+
+  entry.items = (selected as string[]) ?? [];
+  return entry;
+}
+
 export async function create(): Promise<void> {
   intro("piw — Create Profile");
 
@@ -103,7 +139,6 @@ export async function create(): Promise<void> {
   }
 
   if (bulkSource === "_custom") {
-    // Per-file
     for (const key of INHERITABLE_FILES) {
       const entry = await pickEntry(
         profiles,
@@ -116,7 +151,6 @@ export async function create(): Promise<void> {
       inherits[key] = entry;
     }
   } else {
-    // Bulk: ask action, apply to all files
     const action = await select({
       message: "Base configuration — how?",
       options: [
@@ -141,12 +175,9 @@ export async function create(): Promise<void> {
     for (const key of INHERITABLE_FILES) inherits[key] = entry;
   }
 
-  // Phase 2: Directories — always individual
+  // Phase 2: Directories — individual with per-item multiselect
   for (const key of INHERITABLE_DIRS) {
-    const entry = await pickEntry(
-      profiles,
-      INHERIT_LABELS[key as InheritableKey],
-    );
+    const entry = await pickDirEntry(profiles, key as InheritableKey);
     if (entry === undefined) {
       cancel("Cancelled");
       return;

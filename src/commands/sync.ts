@@ -1,5 +1,6 @@
 import {
   cancel,
+  groupMultiselect,
   intro,
   isCancel,
   log,
@@ -19,12 +20,15 @@ import {
   readProfile,
   updateInherits,
 } from "../utils/profile.js";
+import { listSourceItems } from "../utils/symlinks.js";
 
 function entryLabel(entry: InheritEntry | null): string {
   if (entry === null) return "None";
   const src = entry.source === "base" ? "Base" : entry.source;
   const act = entry.action === "inherit" ? "symlink" : "copy";
-  return `${src}/${act}`;
+  const count =
+    entry.items !== undefined ? ` (${entry.items.length} items)` : "";
+  return `${src}/${act}${count}`;
 }
 
 const ALL_KEYS: InheritableKey[] = [
@@ -72,6 +76,7 @@ export async function sync(): Promise<void> {
   for (const key of ALL_KEYS) {
     const current = newInherits[key] ?? null;
     const currentLabel = entryLabel(current);
+    const isDir = INHERITABLE_DIRS.includes(key as never);
 
     const source = await select({
       message: `${INHERIT_LABELS[key]} — currently ${currentLabel}`,
@@ -112,6 +117,32 @@ export async function sync(): Promise<void> {
       source: source as string,
       action: action as "copy" | "inherit",
     };
+
+    // For directories: show per-item multiselect
+    if (isDir) {
+      const items = listSourceItems(entry, key);
+
+      if (items.length > 0) {
+        const selected = await groupMultiselect({
+          message: `Which items to ${action === "inherit" ? "inherit" : "copy"}?`,
+          options: {
+            Items: items.map((item) => ({ value: item, label: item })),
+          },
+          initialValues: items,
+          required: false,
+        });
+
+        if (isCancel(selected)) {
+          cancel("Cancelled");
+          return;
+        }
+
+        entry.items = (selected as string[]) ?? [];
+      } else {
+        entry.items = [];
+      }
+    }
+
     changes.push(
       `${INHERIT_LABELS[key]}: ${currentLabel} → ${entryLabel(entry)}`,
     );

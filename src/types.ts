@@ -34,6 +34,8 @@ export const INHERIT_LABELS: Record<InheritableKey, string> = {
 export interface InheritEntry {
   source: "base" | string; // "base" or a profile name
   action: "copy" | "inherit";
+  /** For directories: only apply these items. Undefined = all. */
+  items?: string[];
 }
 
 // Per-profile metadata stored in ~/.pi/profiles/<name>/profile.json
