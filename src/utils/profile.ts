@@ -51,7 +51,17 @@ export function writeProfile(name: string, config: ProfileConfig): void {
   writeFileSync(join(dir, "profile.json"), JSON.stringify(config, null, 2));
 }
 
-/** List all profiles */
+/** List all profile directories (piw + pi-profile managed) */
+export function listAllProfileDirs(): string[] {
+  ensureProfilesDir();
+  if (!existsSync(PROFILES_DIR)) return [];
+
+  return readdirSync(PROFILES_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+}
+
+/** List piw-managed profiles */
 export function listProfiles(): ProfileInfo[] {
   ensureProfilesDir();
   if (!existsSync(PROFILES_DIR)) return [];

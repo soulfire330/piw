@@ -5,7 +5,7 @@ import { install } from "./commands/install.js";
 import { list } from "./commands/list.js";
 import { rename } from "./commands/rename.js";
 import { sync } from "./commands/sync.js";
-import { listProfiles } from "./utils/profile.js";
+import { listAllProfileDirs } from "./utils/profile.js";
 import { profilePath } from "./utils/symlinks.js";
 
 const MODES: Record<
@@ -39,7 +39,7 @@ const MODES: Record<
 async function interactive(): Promise<void> {
   intro("piw — Pi Profile Manager");
 
-  const profiles = listProfiles();
+  const profiles = listAllProfileDirs();
 
   // Build menu: Run first if profiles exist, then the rest
   const options: Array<{ value: string; label: string; hint?: string }> = [];
@@ -70,7 +70,7 @@ async function interactive(): Promise<void> {
   if (mode === "_run") {
     const target = await select({
       message: "Select profile to launch:",
-      options: profiles.map((p) => ({ value: p.name, label: p.name })),
+      options: profiles.map((name) => ({ value: name, label: name })),
     });
 
     if (isCancel(target)) {
@@ -103,8 +103,8 @@ async function main(): Promise<void> {
 
   // If the argument matches a profile name, launch pi in that profile
   if (cmd) {
-    const profiles = listProfiles();
-    const match = profiles.find((p) => p.name === cmd);
+    const profiles = listAllProfileDirs();
+    const match = profiles.find((p) => p === cmd);
     if (match) {
       const dir = profilePath(match.name);
       console.log(`Launching pi with profile "${match.name}"...`);
