@@ -121,7 +121,6 @@ async function manageDir(
   cfg: ProfileConfig,
   key: CopyableDir,
 ): Promise<void> {
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const items = cfg.dirs[key];
     const label = dirLabel(items);
@@ -155,7 +154,6 @@ async function manageDirItems(
   cfg: ProfileConfig,
   key: CopyableDir,
 ): Promise<void> {
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const items = cfg.dirs[key];
 
@@ -165,7 +163,7 @@ async function manageDirItems(
     }
 
     const chosen = await select({
-      message: `${key}/ — select item to remove:`,
+      message: `${key}/ — select item:`,
       options: [
         ...items.map((item) => ({ value: item, label: item })),
         { value: "done", label: "Back" },
@@ -174,13 +172,31 @@ async function manageDirItems(
 
     if (isCancel(chosen) || chosen === "done") return;
 
+    const action = await select({
+      message: `${chosen}`,
+      options: [
+        { value: "delete", label: "Delete" },
+        { value: "back", label: "Back" },
+      ],
+    });
+
+    if (isCancel(action) || action === "back") continue;
+
+    const ok = await confirm({
+      message: `Delete "${chosen}" from ${key}/?`,
+      active: "Delete",
+      inactive: "Cancel",
+      initialValue: false,
+    });
+
+    if (isCancel(ok) || !ok) continue;
+
     cfg.dirs[key] = items.filter((i) => i !== chosen);
     updateConfig(name, cfg.source, cfg.files, cfg.dirs);
     applyCopy(name, cfg.source, key, cfg.dirs[key]);
-    log.success(`Removed ${chosen} from ${key}/`);
+    log.success(`Deleted ${chosen} from ${key}/`);
   }
 }
-
 async function copyFromOther(
   name: string,
   cfg: ProfileConfig,
@@ -240,7 +256,6 @@ async function copyFromOther(
 }
 
 async function doResources(name: string): Promise<void> {
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const cfg = readProfile(name);
     if (!cfg) {
