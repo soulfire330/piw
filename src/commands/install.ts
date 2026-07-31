@@ -8,24 +8,27 @@ import {
   spinner,
   text,
 } from "@clack/prompts";
-import { listAllProfileDirs } from "../services/profile.service.js";
-import { profilePath } from "../services/profile.service.js";
+import { listAllProfileDirs, basePath } from "../services/profile.service.js";
 
 export async function install(): Promise<void> {
   intro("piw — Install Package");
 
   const profiles = listAllProfileDirs();
+  const home = process.env.HOME ?? "~";
 
-  if (profiles.length === 0) {
-    log.warn("No profiles found. Create one first: piw create");
-    outro("Done");
-    return;
-  }
+  const targetOptions: Array<{ value: string; label: string; hint?: string }> = [
+    { value: "_root_", label: "_root_", hint: `${home}/.pi/agent/` },
+    ...profiles.map((name) => ({
+      value: name,
+      label: name,
+      hint: `${home}/.pi/profiles/${name}/`,
+    })),
+  ];
 
   const targets = await multiselect({
-    message: "Select profiles to install into:",
-    options: profiles.map((name) => ({ value: name, label: name })),
-    initialValues: profiles,
+    message: "Install into:",
+    options: targetOptions,
+    initialValues: targetOptions.map((o) => o.value),
     required: true,
   });
 
@@ -53,10 +56,11 @@ export async function install(): Promise<void> {
   }
 
   for (const target of targets as string[]) {
-    const dir = profilePath(target);
+    const dir = target === "_root_" ? basePath() : `${home}/.pi/profiles/${target}`;
+    const label = target === "_root_" ? "_root_" : target;
     const spin = spinner();
 
-    spin.start(`pi install ${pkg} → ${target}`);
+    spin.start(`pi install ${pkg} → ${label}`);
 
     const proc = Bun.spawn(["pi", "install", pkg], {
       env: { ...process.env, PI_CODING_AGENT_DIR: dir },
@@ -67,7 +71,7 @@ export async function install(): Promise<void> {
     const exitCode = await proc.exited;
 
     if (exitCode === 0) {
-      spin.stop(`Installed ${pkg} into "${target}"`);
+      spin.stop(`Installed ${pkg} into "${label}"`);
     } else {
       const err = await new Response(proc.stderr).text();
       spin.stop(err.trim() || `pi install exited with code ${exitCode}`);

@@ -4,7 +4,7 @@ import type { CopyableDir } from "../types.js";
 import { basePath, profilePath } from "./profile.service.js";
 
 function sourceDir(source: string): string {
-  return source === "base" ? basePath() : profilePath(source);
+  return source === "_root_" ? basePath() : profilePath(source);
 }
 
 /** List items in a source directory (all, including package-managed) */

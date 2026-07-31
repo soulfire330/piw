@@ -18,6 +18,7 @@ import {
 import {
   listAllProfileDirs,
   createProfile,
+  validateProfileName,
   basePath,
 } from "../services/profile.service.js";
 import {
@@ -28,7 +29,7 @@ import {
 } from "../services/resource.service.js";
 
 function sourceDir(src: string): string {
-  return src === "base" ? basePath() : `${process.env.HOME}/.pi/profiles/${src}`;
+  return src === "_root_" ? basePath() : `${process.env.HOME}/.pi/profiles/${src}`;
 }
 
 export async function create(): Promise<void> {
@@ -37,12 +38,7 @@ export async function create(): Promise<void> {
   const name = await text({
     message: "Profile name:",
     placeholder: "my-agent",
-    validate: (v) => {
-      if (!v || v.trim().length === 0) return "Name is required";
-      if (!/^[a-z0-9_-]+$/i.test(v))
-        return "Only letters, numbers, hyphens, underscores";
-      return undefined;
-    },
+    validate: (v) => validateProfileName(v as string),
   });
 
   if (isCancel(name)) {
@@ -52,15 +48,9 @@ export async function create(): Promise<void> {
 
   const profiles = listAllProfileDirs();
 
-  if (profiles.includes(name)) {
-    log.error(`Profile "${name}" already exists`);
-    outro("Cancelled");
-    return;
-  }
-
   const home = process.env.HOME ?? "~";
   const sourceOptions: Array<{ value: string; label: string; hint?: string }> = [
-    { value: "base", label: "Base", hint: `${home}/.pi/agent/` },
+    { value: "_root_", label: "_root_", hint: `${home}/.pi/agent/` },
     ...profiles.map((p) => ({
       value: p,
       label: p,
@@ -109,7 +99,7 @@ export async function create(): Promise<void> {
   }
 
   const srcDir = sourceDir(source);
-  const srcLabel = source === "base" ? "Base" : source;
+  const srcLabel = source === "_root_" ? "_root_" : source;
 
   // Step 1: Pick packages
   const srcPackages = readPackagesFromDir(srcDir);

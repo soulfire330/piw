@@ -37,7 +37,7 @@ async function copyFromOther(name: string): Promise<void> {
   const source = await select({
     message: "Copy from?",
     options: [
-      { value: "base", label: "Base", hint: `${home}/.pi/agent/` },
+      { value: "_root_", label: "_root_", hint: `${home}/.pi/agent/` },
       ...otherProfiles.map((p) => ({
         value: p,
         label: p,
@@ -50,7 +50,7 @@ async function copyFromOther(name: string): Promise<void> {
 
   const src = source as string;
   const srcDir =
-    src === "base"
+    src === "_root_"
       ? `${home}/.pi/agent`
       : `${home}/.pi/profiles/${src}`;
 

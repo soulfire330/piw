@@ -5,12 +5,28 @@ import { join } from "node:path";
 
 const PROFILES_DIR = `${process.env.HOME}/.pi/profiles`;
 
+/** Reserved names that cannot be used as profile names */
+export const RESERVED_NAMES = ["_root_"];
+
 export function profilePath(name: string): string {
   return `${PROFILES_DIR}/${name}`;
 }
 
 export function basePath(): string {
   return `${process.env.HOME}/.pi/agent`;
+}
+
+// ── Validation ─────────────────────────────────────────────────
+
+export function validateProfileName(name: string): string | undefined {
+  if (!name || name.trim().length === 0) return "Name is required";
+  if (!/^[a-z0-9_-]+$/i.test(name))
+    return "Only letters, numbers, hyphens, underscores";
+  if (RESERVED_NAMES.includes(name))
+    return `"${name}" is a reserved word`;
+  const dir = profilePath(name);
+  if (existsSync(dir)) return `Profile "${name}" already exists`;
+  return undefined;
 }
 
 // ── Profile CRUD ──────────────────────────────────────────────
@@ -28,14 +44,14 @@ export function ensureProfilesDir(): void {
 export function listAllProfileDirs(): string[] {
   ensureProfilesDir();
   return readdirSync(PROFILES_DIR, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !RESERVED_NAMES.includes(e.name))
     .map((e) => e.name);
 }
 
 export function listProfiles(): ProfileInfo[] {
   ensureProfilesDir();
   return readdirSync(PROFILES_DIR, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .filter((e) => e.isDirectory() && !e.name.startsWith(".") && !RESERVED_NAMES.includes(e.name))
     .map((e) => {
       const dir = profilePath(e.name);
       return { name: e.name, createdAt: statSync(dir).birthtime, dir };
