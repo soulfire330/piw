@@ -1,13 +1,15 @@
-import { cancel, isCancel, log, text } from "@clack/prompts";
 import { renameProfile } from "../services/profile.service.js";
 
 export async function rename(name?: string, newName?: string): Promise<void> {
   if (!name) {
+    const { log } = await import("@clack/prompts");
     log.error("Usage: piw rename <old-name> <new-name>");
     return;
   }
 
   if (!newName) {
+    // Interactive: prompt for new name
+    const { cancel, isCancel, text } = await import("@clack/prompts");
     const val = await text({
       message: `New name for "${name}":`,
       placeholder: "new-name",
@@ -29,14 +31,15 @@ export async function rename(name?: string, newName?: string): Promise<void> {
   }
 
   if (newName === name) {
-    log.info("Name unchanged");
+    console.log("Name unchanged");
     return;
   }
 
   try {
     renameProfile(name, newName);
-    log.success(`Renamed "${name}" → "${newName}"`);
+    console.log(`Renamed "${name}" → "${newName}"`);
   } catch (err) {
-    log.error((err as Error).message);
+    console.error((err as Error).message);
+    process.exit(1);
   }
 }

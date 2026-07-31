@@ -1,12 +1,4 @@
-import {
-  cancel,
-  intro,
-  isCancel,
-  log,
-  outro,
-  select,
-  text,
-} from "@clack/prompts";
+import type { CloneOptions } from "../types.js";
 import { cpSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { COPYABLE_DIRS } from "../types.js";
@@ -19,14 +11,26 @@ import {
 import { readPackages } from "../services/package.service.js";
 import { copyConfigFile, copyLooseDirItems } from "../services/resource.service.js";
 
-export async function clone(source?: string, target?: string): Promise<void> {
+export async function clone(
+  sourceOrOpts?: string | CloneOptions,
+  target?: string,
+): Promise<void> {
+  const opts: CloneOptions =
+    typeof sourceOrOpts === "string"
+      ? { source: sourceOrOpts, target }
+      : (sourceOrOpts ?? {});
+
+  let source = opts.source;
+
   if (!source) {
     const profiles = listAllProfileDirs();
     if (profiles.length === 0) {
+      const { log } = await import("@clack/prompts");
       log.warn("No profiles to clone from. Create one first.");
       return;
     }
 
+    const { cancel, isCancel, select } = await import("@clack/prompts");
     const chosen = await select({
       message: "Clone from:",
       options: profiles.map((n) => ({ value: n, label: n })),
@@ -40,7 +44,10 @@ export async function clone(source?: string, target?: string): Promise<void> {
     source = chosen as string;
   }
 
-  if (!target) {
+  let targetName = opts.target;
+
+  if (!targetName) {
+    const { cancel, isCancel, text } = await import("@clack/prompts");
     const val = await text({
       message: "New profile name:",
       placeholder: `${source}-copy`,
@@ -52,21 +59,19 @@ export async function clone(source?: string, target?: string): Promise<void> {
       return;
     }
 
-    target = val;
+    targetName = val;
   }
 
   const srcDir = profilePath(source);
   if (!existsSync(srcDir)) {
-    log.error(`Source profile "${source}" not found`);
-    return;
+    console.error(`Source profile "${source}" not found`);
+    process.exit(1);
   }
 
-  intro(`piw — Clone "${source}" → "${target}"`);
-
-  const dstDir = createProfile(target);
+  const dstDir = createProfile(targetName);
 
   // Copy settings.json (includes packages — Pi will auto-install on first launch)
-  copyConfigFile(target, source, "settings.json");
+  copyConfigFile(targetName, source, "settings.json");
 
   // Copy all loose resources
   for (const d of COPYABLE_DIRS) {
@@ -76,7 +81,7 @@ export async function clone(source?: string, target?: string): Promise<void> {
       .filter((e) => !e.name.startsWith("."))
       .map((e) => e.name);
     if (items.length > 0) {
-      copyLooseDirItems(target, source, d, items);
+      copyLooseDirItems(targetName, source, d, items);
     }
   }
 
@@ -87,13 +92,9 @@ export async function clone(source?: string, target?: string): Promise<void> {
   }
 
   const pkgs = readPackages(source);
+  console.log(`Cloned "${source}" → "${targetName}"`);
   if (pkgs.length > 0) {
-    log.info(
-      `${pkgs.length} package(s) declared in settings.json — Pi will install them on first launch`,
-    );
+    console.log(`${pkgs.length} package(s) declared — Pi will install them on first launch`);
   }
-
-  log.success(`Cloned "${source}" → "${target}"`);
-  log.info(`Launch with: piw ${target}`);
-  outro("Done");
+  console.log(`Launch with: piw ${targetName}`);
 }

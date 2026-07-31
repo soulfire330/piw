@@ -23,3 +23,52 @@ export interface PackageResources {
     themes: string[];
   };
 }
+
+// ── CLI options (non-interactive) ─────────────────────────────
+
+export interface CreateOptions {
+  name?: string;
+  from?: string;
+  empty?: boolean;
+  packages?: string[];
+  configs?: string[];
+  extensions?: string[];
+  skills?: string[];
+  prompts?: string[];
+  themes?: string[];
+  yes?: boolean;
+}
+
+export interface CloneOptions {
+  source?: string;
+  target?: string;
+  yes?: boolean;
+}
+
+export interface DeleteOptions {
+  name?: string;
+  yes?: boolean;
+}
+
+export interface InstallOptions {
+  pkg?: string;
+  targets?: string[];
+}
+
+export interface ManageOptions {
+  profile?: string;
+  show?: boolean;
+  copyFrom?: string;
+  renameTo?: string;
+  deleteProfile?: boolean;
+  yes?: boolean;
+}
+
+export interface ListOptions {
+  json?: boolean;
+}
+
+export interface ShowOptions {
+  name?: string;
+  json?: boolean;
+}

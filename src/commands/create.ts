@@ -1,16 +1,5 @@
-import {
-  cancel,
-  confirm,
-  groupMultiselect,
-  intro,
-  isCancel,
-  log,
-  outro,
-  select,
-  tasks,
-  text,
-} from "@clack/prompts";
-import { COPYABLE_DIRS, COPYABLE_LABELS, type CopyableDir } from "../types.js";
+import type { CreateOptions, CopyableDir } from "../types.js";
+import { COPYABLE_DIRS, COPYABLE_LABELS } from "../types.js";
 import {
   readPackagesFromDir,
   getPackageProvidedItems,
@@ -32,14 +21,101 @@ function sourceDir(src: string): string {
   return src === "_root_" ? basePath() : `${process.env.HOME}/.pi/profiles/${src}`;
 }
 
-export async function create(): Promise<void> {
+export async function create(opts?: CreateOptions): Promise<void> {
+  const o = opts ?? {};
+
+  // ── Non-interactive path: --name + (--from or --empty) ──────
+  if (o.name && (o.from || o.empty)) {
+    const name = o.name;
+    const err = validateProfileName(name);
+    if (err) {
+      console.error(`Invalid profile name: ${err}`);
+      process.exit(1);
+    }
+
+    createProfile(name);
+
+    if (o.empty) {
+      console.log(`Empty profile "${name}" created at ~/.pi/profiles/${name}/`);
+      console.log(`Launch with: piw ${name}`);
+      return;
+    }
+
+    const source = o.from!;
+    const srcDir = sourceDir(source);
+
+    // Packages
+    const srcPackages = readPackagesFromDir(srcDir);
+    const selectedPkgs = o.packages
+      ? srcPackages.filter((p) => o.packages!.includes(p.source)).map((p) => p.source)
+      : srcPackages.map((p) => p.source);
+
+    if (selectedPkgs.length > 0) {
+      copySettingsWithPackages(name, source, selectedPkgs);
+    }
+
+    // Config files
+    const configs = o.configs ?? ["models.json", "keybindings.json"];
+    for (const f of configs) {
+      copyConfigFile(name, source, f);
+    }
+
+    // Loose resources — if specific items given, copy those; otherwise copy all
+    const resourceFilters: Record<string, string[] | undefined> = {
+      extensions: o.extensions,
+      skills: o.skills,
+      prompts: o.prompts,
+      themes: o.themes,
+    };
+
+    let totalLoose = 0;
+    for (const d of COPYABLE_DIRS) {
+      const filter = resourceFilters[d];
+      const srcItems = listSourceItems(source, d);
+      const pkgProvided = getPackageProvidedItems(srcDir, d);
+      const looseItems = srcItems.filter((item) => !pkgProvided.has(item));
+      const toCopy = filter
+        ? looseItems.filter((i) => filter.includes(i))
+        : looseItems;
+      if (toCopy.length > 0) {
+        copyLooseDirItems(name, source, d, toCopy);
+        totalLoose += toCopy.length;
+      }
+    }
+
+    const parts: string[] = [];
+    if (selectedPkgs.length > 0) parts.push(`${selectedPkgs.length} package(s)`);
+    if (configs.length > 0) parts.push(`${configs.length} config(s)`);
+    if (totalLoose > 0) parts.push(`${totalLoose} loose resource(s)`);
+    console.log(`Profile "${name}" created from ${source} (${parts.join(", ") || "copy all"})`);
+    if (selectedPkgs.length > 0) {
+      console.log(`${selectedPkgs.length} package(s) declared — Pi will install them on first launch`);
+    }
+    console.log(`Launch with: piw ${name}`);
+    return;
+  }
+
+  // ── Interactive path ─────────────────────────────────────────
+  const {
+    cancel,
+    confirm,
+    groupMultiselect,
+    intro,
+    isCancel,
+    log,
+    outro,
+    select,
+    tasks,
+    text,
+  } = await import("@clack/prompts");
+
   intro("piw — Create Profile");
 
-  const name = await text({
+  const name = o.name ?? (await text({
     message: "Profile name:",
     placeholder: "my-agent",
     validate: (v) => validateProfileName(v as string),
-  });
+  }));
 
   if (isCancel(name)) {
     cancel("Cancelled");
@@ -59,10 +135,10 @@ export async function create(): Promise<void> {
     { value: "none", label: "None", hint: "empty profile" },
   ];
 
-  const src = await select({
+  const src = o.from ?? (await select({
     message: "Copy from?",
     options: sourceOptions,
-  });
+  }));
 
   if (isCancel(src)) {
     cancel("Cancelled");
@@ -72,7 +148,7 @@ export async function create(): Promise<void> {
   const source = src as string;
 
   if (source === "none") {
-    const proceed = await confirm({
+    const proceed = o.yes ? true : await confirm({
       message: `Create empty profile "${name}"?`,
       active: "Create",
       inactive: "Cancel",
@@ -145,7 +221,7 @@ export async function create(): Promise<void> {
   const groupNames = Object.keys(groups);
   if (groupNames.length === 0) {
     log.info("Nothing to copy from source");
-    const proceed = await confirm({
+    const proceed = o.yes ? true : await confirm({
       message: `Create empty profile "${name}"?`,
       active: "Create",
       inactive: "Cancel",
@@ -208,7 +284,7 @@ export async function create(): Promise<void> {
   const looseCount = Object.values(dirItems).flat().length;
   if (looseCount > 0) parts.push(`${looseCount} loose resource(s)`);
 
-  const proceed = await confirm({
+  const proceed = o.yes ? true : await confirm({
     message: `Create "${name}" from ${srcLabel}? (${parts.join(", ") || "empty"})`,
     active: "Create",
     inactive: "Cancel",

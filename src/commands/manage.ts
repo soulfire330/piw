@@ -1,14 +1,5 @@
-import {
-  cancel,
-  confirm,
-  groupMultiselect,
-  intro,
-  isCancel,
-  log,
-  outro,
-  select,
-} from "@clack/prompts";
-import { COPYABLE_DIRS, COPYABLE_LABELS, type CopyableDir } from "../types.js";
+import type { ManageOptions, CopyableDir } from "../types.js";
+import { COPYABLE_DIRS, COPYABLE_LABELS } from "../types.js";
 import {
   readPackages,
   readPackagesFromDir,
@@ -30,36 +21,100 @@ import { show } from "./show.js";
 
 // ── Copy from another profile ──────────────────────────────────
 
-async function copyFromOther(name: string): Promise<void> {
+async function copyFromOther(
+  name: string,
+  cliSource?: string,
+): Promise<void> {
   const home = process.env.HOME ?? "~";
   const otherProfiles = listAllProfileDirs().filter((d) => d !== name);
 
-  const source = await select({
-    message: "Copy from?",
-    options: [
-      { value: "_root_", label: "_root_", hint: `${home}/.pi/agent/` },
-      ...otherProfiles.map((p) => ({
-        value: p,
-        label: p,
-        hint: `${home}/.pi/profiles/${p}/`,
-      })),
-    ],
-  });
+  let src: string;
+  if (cliSource) {
+    src = cliSource;
+  } else {
+    const { isCancel, select } = await import("@clack/prompts");
+    const source = await select({
+      message: "Copy from?",
+      options: [
+        { value: "_root_", label: "_root_", hint: `${home}/.pi/agent/` },
+        ...otherProfiles.map((p) => ({
+          value: p,
+          label: p,
+          hint: `${home}/.pi/profiles/${p}/`,
+        })),
+      ],
+    });
 
-  if (isCancel(source)) return;
+    if (isCancel(source)) return;
+    src = source as string;
+  }
 
-  const src = source as string;
   const srcDir =
-    src === "_root_"
-      ? `${home}/.pi/agent`
-      : `${home}/.pi/profiles/${src}`;
+    src === "_root_" ? `${home}/.pi/agent` : `${home}/.pi/profiles/${src}`;
 
-  // Pick packages and loose resources in one grouped multiselect
+  // Non-interactive: copy everything new
+  if (cliSource) {
+    const { confirm, isCancel } = await import("@clack/prompts");
+    const targetPkgs = new Set(readPackages(name).map((p) => p.source));
+    const srcPkgs = readPackagesFromDir(srcDir);
+    const newPkgs = srcPkgs.filter((p) => !targetPkgs.has(p.source));
+
+    const dirItems: Record<string, string[]> = {};
+    for (const d of COPYABLE_DIRS) {
+      const srcItems = listSourceItems(src, d);
+      const curItems = listLooseItems(name, d);
+      const newItems = srcItems.filter((i) => !curItems.includes(i));
+      if (newItems.length > 0) dirItems[d] = newItems;
+    }
+
+    const pkgCount = newPkgs.length;
+    const looseCount = Object.values(dirItems).flat().length;
+    if (pkgCount === 0 && looseCount === 0) {
+      console.log("Nothing to copy");
+      return;
+    }
+
+    const summary = [
+      pkgCount > 0 ? `${pkgCount} package(s)` : "",
+      looseCount > 0 ? `${looseCount} loose resource(s)` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    console.log(`Copying from ${src} to ${name}: ${summary}`);
+
+    for (const p of newPkgs) {
+      const result = await piInstall(name, p.source);
+      if (result.ok) {
+        console.log(`Installed "${p.source}"`);
+      } else {
+        console.error(`Failed: "${p.source}" — ${result.error ?? "unknown"}`);
+      }
+    }
+
+    for (const d of COPYABLE_DIRS) {
+      const items = dirItems[d];
+      if (items && items.length > 0) {
+        copyLooseDirItems(name, src, d, items);
+      }
+    }
+
+    console.log(`Copied ${summary} from ${src}`);
+    return;
+  }
+
+  // Interactive: show multiselect
+  const { confirm, groupMultiselect, isCancel, log } =
+    await import("@clack/prompts");
+
   const targetPkgs = new Set(readPackages(name).map((p) => p.source));
   const srcPkgs = readPackagesFromDir(srcDir);
   const newPkgs = srcPkgs.filter((p) => !targetPkgs.has(p.source));
 
-  const groups: Record<string, Array<{ value: string; label: string; hint?: string }>> = {};
+  const groups: Record<
+    string,
+    Array<{ value: string; label: string; hint?: string }>
+  > = {};
   const inheritedPkgs: string[] = [];
   const dirItems: Record<string, string[]> = {};
 
@@ -157,10 +212,16 @@ async function copyFromOther(name: string): Promise<void> {
 // ── Delete items ───────────────────────────────────────────────
 
 async function deleteItems(name: string): Promise<void> {
+  const { confirm, groupMultiselect, isCancel, log } =
+    await import("@clack/prompts");
+
   const toRemovePkgs: string[] = [];
   const toRemoveLoose: Array<{ dir: string; item: string }> = [];
 
-  const groups: Record<string, Array<{ value: string; label: string; hint?: string }>> = {};
+  const groups: Record<
+    string,
+    Array<{ value: string; label: string; hint?: string }>
+  > = {};
 
   // ── Packages group ──
   const pkgs = readPackages(name);
@@ -252,7 +313,33 @@ async function deleteItems(name: string): Promise<void> {
 
 // ── Main ───────────────────────────────────────────────────────
 
-export async function manage(): Promise<void> {
+export async function manage(opts?: ManageOptions): Promise<void> {
+  const o = opts ?? {};
+
+  // ── Non-interactive path ────────────────────────────────────
+  if (o.profile) {
+    if (o.show) {
+      await show(o.profile);
+      return;
+    }
+    if (o.renameTo) {
+      await rename(o.profile, o.renameTo);
+      return;
+    }
+    if (o.deleteProfile) {
+      await deleteCmd({ name: o.profile, yes: o.yes });
+      return;
+    }
+    if (o.copyFrom) {
+      await copyFromOther(o.profile, o.copyFrom);
+      return;
+    }
+  }
+
+  // ── Interactive path ────────────────────────────────────────
+  const { cancel, intro, isCancel, log, outro, select } =
+    await import("@clack/prompts");
+
   intro("piw — Manage Profile");
 
   const profiles = listAllProfileDirs();
@@ -263,10 +350,11 @@ export async function manage(): Promise<void> {
     return;
   }
 
-  const target = await select({
-    message: "Select profile:",
-    options: profiles.map((name) => ({ value: name, label: name })),
-  });
+  const target = (o.profile as string) ??
+    (await select({
+      message: "Select profile:",
+      options: profiles.map((name) => ({ value: name, label: name })),
+    }));
 
   if (isCancel(target)) {
     cancel("Cancelled");
