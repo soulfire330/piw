@@ -15,7 +15,6 @@ const MODES: Record<
 > = {
   create: { label: "Create", hint: "Create a new profile", fn: create },
   list: { label: "List", hint: "Show all profiles", fn: list },
-  show: { label: "Show", hint: "Show profile details", fn: show },
   clone: {
     label: "Clone",
     hint: "Clone a profile with all resources",

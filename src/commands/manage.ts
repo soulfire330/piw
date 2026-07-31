@@ -7,15 +7,12 @@ import {
   multiselect,
   outro,
   select,
-  text,
 } from "@clack/prompts";
-import type { CopyableDir } from "../types.js";
-import { COPYABLE_DIRS, COPYABLE_LABELS } from "../types.js";
+import { COPYABLE_DIRS, COPYABLE_LABELS, type CopyableDir } from "../types.js";
 import {
   readPackages,
-  isItemLoose,
+  readPackagesFromDir,
   listLooseItems,
-  listPackageItems,
 } from "../services/package.service.js";
 import {
   listAllProfileDirs,
@@ -24,141 +21,24 @@ import {
 import {
   copyLooseDirItems,
   deleteLooseItem,
-  listAllProfileItems,
   listSourceItems,
 } from "../services/resource.service.js";
 import { piInstall, piRemove } from "../services/pi.service.js";
 import { rename } from "./rename.js";
 import { deleteCmd } from "./delete.js";
+import { show } from "./show.js";
 
-function dirLabel(items: string[]): string {
-  if (items.length === 0) return "none";
-  return `${items.length} items: ${items.join(", ")}`;
-}
+// ── Copy from another profile ──────────────────────────────────
 
-// ── Packages ──────────────────────────────────────────────────
-
-async function managePackages(name: string): Promise<void> {
-  while (true) {
-    const pkgs = readPackages(name);
-    const pkgsWithStatus = pkgs.map((p) => ({
-      value: p.source,
-      label: p.source,
-    }));
-
-    const action = await select({
-      message: `Packages (${pkgs.length}) — manage:`,
-      options: [
-        { value: "_add", label: "Add package..." },
-        ...(pkgs.length > 0
-          ? [{ value: "_remove", label: "Remove package..." }]
-          : []),
-        ...(pkgs.length > 0
-          ? [
-              {
-                value: "_list",
-                label: "Show package resources...",
-              },
-            ]
-          : []),
-        { value: "done", label: "Back" },
-      ],
-    });
-
-    if (isCancel(action) || action === "done") return;
-
-    if (action === "_add") {
-      const pkg = await text({
-        message: "Package to add:",
-        placeholder: "npm:some-package or git:github.com/user/repo",
-        validate: (v) => {
-          if (!v || v.trim().length === 0) return "Package is required";
-          return undefined;
-        },
-      });
-
-      if (isCancel(pkg)) continue;
-
-      const ok = await confirm({
-        message: `Add "${pkg}" to ${name}?`,
-      });
-      if (isCancel(ok) || !ok) continue;
-
-      const result = await piInstall(name, pkg);
-      if (result.ok) {
-        log.success(`Added "${pkg}"`);
-      } else {
-        log.error(result.error ?? "Failed");
-      }
-    } else if (action === "_remove") {
-      const picked = await multiselect({
-        message: "Select packages to remove:",
-        options: pkgsWithStatus,
-        required: false,
-      });
-
-      if (isCancel(picked)) continue;
-
-      const toRemove = (picked as string[]) ?? [];
-      if (toRemove.length === 0) continue;
-
-      const ok = await confirm({
-        message: `Remove ${toRemove.length} package(s) from ${name}?`,
-      });
-      if (isCancel(ok) || !ok) continue;
-
-      for (const pkg of toRemove) {
-        const result = await piRemove(name, pkg);
-        if (result.ok) {
-          log.success(`Removed "${pkg}"`);
-        } else {
-          log.error(result.error ?? `Failed to remove "${pkg}"`);
-        }
-      }
-    } else if (action === "_list") {
-      const pkgItems = listPackageItems(name, "skills");
-      const extItems = listPackageItems(name, "extensions");
-      const promptItems = listPackageItems(name, "prompts");
-      const themeItems = listPackageItems(name, "themes");
-
-      const all = new Map<string, string[]>();
-      for (const [k, v] of [
-        ...pkgItems,
-        ...extItems,
-        ...promptItems,
-        ...themeItems,
-      ]) {
-        all.set(k, [...(all.get(k) ?? []), ...v]);
-      }
-
-      if (all.size === 0) {
-        log.info("No package-provided resources detected");
-      } else {
-        log.info("Package-provided resources:");
-        for (const [pkgId, items] of all) {
-          log.message(`  ${pkgId}: ${items.join(", ")}`);
-        }
-      }
-      // pause
-      await confirm({ message: "Press enter to continue" });
-    }
-  }
-}
-
-// ── Loose Resources ───────────────────────────────────────────
-
-async function copyFromOther(
-  name: string,
-  key: CopyableDir,
-): Promise<void> {
+async function copyFromOther(name: string): Promise<void> {
   const home = process.env.HOME ?? "~";
-  const allDirs = listAllProfileDirs().filter((d) => d !== name);
+  const otherProfiles = listAllProfileDirs().filter((d) => d !== name);
 
   const source = await select({
-    message: `Copy loose ${key} from?`,
+    message: "Copy from?",
     options: [
       { value: "base", label: "Base", hint: `${home}/.pi/agent/` },
-      ...allDirs.map((p) => ({
+      ...otherProfiles.map((p) => ({
         value: p,
         label: p,
         hint: `${home}/.pi/profiles/${p}/`,
@@ -169,156 +49,182 @@ async function copyFromOther(
   if (isCancel(source)) return;
 
   const src = source as string;
-  const available = listSourceItems(src, key);
+  const srcDir =
+    src === "base"
+      ? `${home}/.pi/agent`
+      : `${home}/.pi/profiles/${src}`;
 
-  if (available.length === 0) {
-    log.warn(`No items in ${src}/${key}/`);
-    return;
-  }
+  // Step 1: Pick packages from source that are not already in target
+  const targetPkgs = new Set(readPackages(name).map((p) => p.source));
+  const srcPkgs = readPackagesFromDir(srcDir);
+  const newPkgs = srcPkgs.filter((p) => !targetPkgs.has(p.source));
 
-  const current = listLooseItems(name, key);
-  const newItems = available.filter((i) => !current.includes(i));
+  let inheritedPkgs: string[] = [];
 
-  if (newItems.length === 0) {
-    log.info("All loose items already present");
-    return;
-  }
-
-  const picked = await multiselect({
-    message: `Select loose ${key} to copy from ${src}:`,
-    options: newItems.map((item) => ({ value: item, label: item })),
-    initialValues: newItems,
-    required: false,
-  });
-
-  if (isCancel(picked)) return;
-
-  const toAdd = (picked as string[]) ?? [];
-  if (toAdd.length === 0) return;
-
-  const ok = await confirm({
-    message: `Copy ${toAdd.length} loose item(s) from ${src} to ${name}?`,
-  });
-  if (isCancel(ok) || !ok) return;
-
-  copyLooseDirItems(name, src, key, [...current, ...toAdd]);
-  log.success(`Copied ${toAdd.length} loose item(s)`);
-}
-
-async function deleteLooseItems(
-  name: string,
-  key: CopyableDir,
-): Promise<void> {
-  const items = listLooseItems(name, key);
-
-  if (items.length === 0) {
-    log.info(`No loose items in ${key}/`);
-    return;
-  }
-
-  const picked = await multiselect({
-    message: `Select loose ${key} to delete:`,
-    options: items.map((item) => ({ value: item, label: item })),
-    required: false,
-  });
-
-  if (isCancel(picked)) return;
-
-  const toDelete = (picked as string[]) ?? [];
-  if (toDelete.length === 0) return;
-
-  const ok = await confirm({
-    message: `Delete ${toDelete.length} loose item(s) from ${name}?`,
-  });
-  if (isCancel(ok) || !ok) return;
-
-  for (const item of toDelete) {
-    deleteLooseItem(name, key, item);
-  }
-  log.success(`Deleted ${toDelete.length} loose item(s)`);
-}
-
-async function manageResource(
-  name: string,
-  key: CopyableDir,
-): Promise<void> {
-  const allItems = listAllProfileItems(name, key);
-  const looseItems = listLooseItems(name, key);
-  const pkgItems = listPackageItems(name, key);
-  const pkgItemSet = new Set<string>();
-  for (const [, items] of pkgItems) {
-    for (const i of items) pkgItemSet.add(i);
-  }
-
-  const label = dirLabel(allItems);
-  const hint = looseItems.length > 0
-    ? `(${looseItems.length} loose, ${pkgItemSet.size} from packages)`
-    : "";
-
-  const action = await select({
-    message: `${COPYABLE_LABELS[key]} — ${label} ${hint}`,
-    options: [
-      { value: "_copy", label: "Copy loose from other..." },
-      ...(looseItems.length > 0
-        ? [{ value: "_delete", label: "Delete loose..." }]
-        : []),
-      ...(pkgItemSet.size > 0
-        ? [
-            {
-              value: "_showpkg",
-              label: "Show package items...",
-            },
-          ]
-        : []),
-      { value: "done", label: "Back" },
-    ],
-  });
-
-  if (isCancel(action) || action === "done") return;
-
-  if (action === "_copy") await copyFromOther(name, key);
-  else if (action === "_delete") await deleteLooseItems(name, key);
-  else if (action === "_showpkg") {
-    log.info(`Package-provided ${key}:`);
-    for (const [pkgId, items] of pkgItems) {
-      log.message(`  ${pkgId}: ${items.join(", ")}`);
-    }
-    await confirm({ message: "Press enter to continue" });
-    await manageResource(name, key);
-  }
-}
-
-async function doResources(name: string): Promise<void> {
-  while (true) {
-    const allKeys = COPYABLE_DIRS.map((k) => {
-      const all = listAllProfileItems(name, k);
-      return {
-        value: k,
-        label: COPYABLE_LABELS[k],
-        hint: dirLabel(all),
-      };
+  if (newPkgs.length > 0) {
+    const picked = await multiselect({
+      message: `Install packages from ${src}? (${newPkgs.length} new)`,
+      options: newPkgs.map((p) => ({ value: p.source, label: p.source })),
+      initialValues: newPkgs.map((p) => p.source),
+      required: false,
     });
 
-    const chosen = await select({
-      message: `Resources for "${name}"`,
-      options: [
-        { value: "_packages", label: "Manage packages..." },
-        ...allKeys,
-        { value: "done", label: "Back" },
-      ],
+    if (isCancel(picked)) return;
+    inheritedPkgs = (picked as string[]) ?? [];
+  } else {
+    log.info("No new packages to copy");
+  }
+
+  // Step 2: Pick loose resources (only those not in target)
+  const dirItems: Record<string, string[]> = {};
+
+  for (const d of COPYABLE_DIRS) {
+    const srcItems = listSourceItems(src, d);
+    const curItems = listLooseItems(name, d);
+    const newItems = srcItems.filter((i) => !curItems.includes(i));
+
+    if (newItems.length === 0) continue;
+
+    const picked = await multiselect({
+      message: `Copy loose ${d} from ${src}? (${newItems.length} new)`,
+      options: newItems.map((item) => ({ value: item, label: item })),
+      initialValues: newItems,
+      required: false,
     });
 
-    if (isCancel(chosen) || chosen === "done") return;
+    if (isCancel(picked)) return;
+    const items = (picked as string[]) ?? [];
+    if (items.length > 0) dirItems[d] = items;
+  }
 
-    if (chosen === "_packages") {
-      await managePackages(name);
+  const pkgCount = inheritedPkgs.length;
+  const looseCount = Object.values(dirItems).flat().length;
+  if (pkgCount === 0 && looseCount === 0) {
+    log.info("Nothing to copy");
+    return;
+  }
+
+  const summary = [
+    pkgCount > 0 ? `${pkgCount} package(s)` : "",
+    looseCount > 0 ? `${looseCount} loose resource(s)` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const ok = await confirm({
+    message: `Copy from ${src} to ${name}? (${summary})`,
+  });
+
+  if (isCancel(ok) || !ok) return;
+
+  // Install packages
+  for (const p of inheritedPkgs) {
+    const result = await piInstall(name, p);
+    if (result.ok) {
+      log.success(`Installed "${p}"`);
     } else {
-      await manageResource(name, chosen as CopyableDir);
+      log.error(`Failed: "${p}" — ${result.error ?? "unknown"}`);
     }
   }
+
+  // Copy loose
+  for (const d of COPYABLE_DIRS) {
+    const items = dirItems[d];
+    if (items && items.length > 0) {
+      copyLooseDirItems(name, src, d, items);
+    }
+  }
+
+  log.success(`Copied ${summary} from ${src}`);
 }
 
-// ── Main ─────────────────────────────────────────────────────
+// ── Delete items ───────────────────────────────────────────────
+
+async function deleteItems(name: string): Promise<void> {
+  const options: Array<{ value: string; label: string; hint?: string }> = [];
+
+  // Packages
+  const pkgs = readPackages(name);
+  for (const p of pkgs) {
+    options.push({ value: `pkg:${p.source}`, label: p.source, hint: "package" });
+  }
+
+  // Loose resources
+  for (const d of COPYABLE_DIRS) {
+    const items = listLooseItems(name, d);
+    for (const item of items) {
+      options.push({
+        value: `loose:${d}/${item}`,
+        label: item,
+        hint: `${d}/`,
+      });
+    }
+  }
+
+  if (options.length === 0) {
+    log.info("Nothing to delete");
+    return;
+  }
+
+  const picked = await multiselect({
+    message: `Delete items from ${name}:`,
+    options,
+    required: false,
+  });
+
+  if (isCancel(picked)) return;
+
+  const selected = (picked as string[]) ?? [];
+  if (selected.length === 0) return;
+
+  const toRemovePkgs: string[] = [];
+  const toRemoveLoose: Array<{ dir: string; item: string }> = [];
+
+  for (const v of selected) {
+    if (v.startsWith("pkg:")) {
+      toRemovePkgs.push(v.slice(4));
+    } else if (v.startsWith("loose:")) {
+      const rest = v.slice(6);
+      const slash = rest.indexOf("/");
+      toRemoveLoose.push({
+        dir: rest.slice(0, slash),
+        item: rest.slice(slash + 1),
+      });
+    }
+  }
+
+  const summary = [
+    toRemovePkgs.length > 0 ? `${toRemovePkgs.length} package(s)` : "",
+    toRemoveLoose.length > 0 ? `${toRemoveLoose.length} loose resource(s)` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const ok = await confirm({
+    message: `Delete from ${name}? (${summary})`,
+  });
+
+  if (isCancel(ok) || !ok) return;
+
+  // Remove packages
+  for (const p of toRemovePkgs) {
+    const result = await piRemove(name, p);
+    if (result.ok) {
+      log.success(`Removed "${p}"`);
+    } else {
+      log.error(`Failed: "${p}" — ${result.error ?? "unknown"}`);
+    }
+  }
+
+  // Delete loose
+  for (const { dir, item } of toRemoveLoose) {
+    deleteLooseItem(name, dir as CopyableDir, item);
+  }
+
+  log.success(`Deleted ${summary}`);
+}
+
+// ── Main ───────────────────────────────────────────────────────
 
 export async function manage(): Promise<void> {
   intro("piw — Manage Profile");
@@ -344,9 +250,11 @@ export async function manage(): Promise<void> {
   const action = await select({
     message: `Manage "${target}"`,
     options: [
-      { value: "resources", label: "Manage resources" },
+      { value: "show", label: "Show resources" },
+      { value: "copy", label: "Copy from another profile" },
+      { value: "delete", label: "Delete items" },
       { value: "rename", label: "Rename profile" },
-      { value: "delete", label: "Delete profile" },
+      { value: "rm", label: "Delete profile" },
     ],
   });
 
@@ -355,9 +263,17 @@ export async function manage(): Promise<void> {
     return;
   }
 
-  if (action === "rename") await rename(target);
-  else if (action === "delete") await deleteCmd(target);
-  else if (action === "resources") await doResources(target);
+  if (action === "show") {
+    await show(target);
+  } else if (action === "rename") {
+    await rename(target);
+  } else if (action === "rm") {
+    await deleteCmd(target);
+  } else if (action === "copy") {
+    await copyFromOther(target);
+  } else if (action === "delete") {
+    await deleteItems(target);
+  }
 
   outro("Done");
 }
