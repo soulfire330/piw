@@ -66,10 +66,6 @@ function listDir(dir: string): string[] {
 }
 
 /** Scan installed packages in a directory and return what resources each provides */
-export function getPackageResources(name: string): PackageResources {
-  return getPackageResourcesFromDir(profilePath(name));
-}
-
 /** Scan installed packages in any directory */
 export function getPackageResourcesFromDir(dir: string): PackageResources {
   const result: PackageResources = {};
@@ -169,18 +165,6 @@ export function getPackageProvidedItems(
 
   return provided;
 }
-export function isItemLoose(name: string, dir: string, item: string): boolean {
-  const resources = getPackageResources(name);
-  for (const pkgId of Object.keys(resources)) {
-    const pkg = resources[pkgId];
-    if (!pkg) continue;
-    const items: string[] =
-      (pkg as unknown as Record<string, string[]>)[dir] ?? [];
-    if (items.includes(item)) return false;
-  }
-  return true;
-}
-
 /** List only loose items in a profile directory */
 export function listLooseItems(
   name: string,
@@ -188,7 +172,7 @@ export function listLooseItems(
 ): string[] {
   const profileDir = join(profilePath(name), dir);
   const all = listDir(profileDir);
-  const resources = getPackageResources(name);
+  const resources = getPackageResourcesFromDir(profilePath(name));
   const provided = new Set<string>();
   for (const pkgId of Object.keys(resources)) {
     const pkg = resources[pkgId];
@@ -205,7 +189,7 @@ export function listPackageItems(
   name: string,
   dir: "extensions" | "skills" | "prompts" | "themes",
 ): Map<string, string[]> {
-  const resources = getPackageResources(name);
+  const resources = getPackageResourcesFromDir(profilePath(name));
   const map = new Map<string, string[]>();
   for (const pkgId of Object.keys(resources)) {
     const pkg = resources[pkgId];

@@ -9,28 +9,12 @@ import { rename } from "./commands/rename.js";
 import { show } from "./commands/show.js";
 import { listAllProfileDirs, profilePath } from "./services/profile.service.js";
 
-const MODES: Record<
-  string,
-  { label: string; hint: string; fn: (...args: string[]) => Promise<void> }
-> = {
-  create: { label: "Create", hint: "Create a new profile", fn: create },
-  list: { label: "List", hint: "Show all profiles", fn: list },
-  clone: {
-    label: "Clone",
-    hint: "Clone a profile with all resources",
-    fn: clone,
-  },
-  manage: {
-    label: "Manage",
-    hint: "Packages, resources, rename, delete",
-    fn: manage,
-  },
-  install: {
-    label: "Install",
-    hint: "Install a package into profiles",
-    fn: install,
-  },
-};
+const MODES = [
+  { value: "create", label: "Create", hint: "Create a new profile", fn: create },
+  { value: "clone", label: "Clone", hint: "Clone a profile with all resources", fn: clone },
+  { value: "manage", label: "Manage", hint: "Show/copy/delete resources, rename, delete profile", fn: manage },
+  { value: "install", label: "Install", hint: "Install a package into profiles", fn: install },
+];
 
 async function interactive(): Promise<void> {
   intro("piw — Pi Profile Manager");
@@ -47,9 +31,8 @@ async function interactive(): Promise<void> {
     });
   }
 
-  for (const [value, { label, hint }] of Object.entries(MODES)) {
-    if (value === "list") continue;
-    options.push({ value, label, hint });
+  for (const m of MODES) {
+    options.push(m);
   }
 
   const mode = await select({
@@ -84,7 +67,7 @@ async function interactive(): Promise<void> {
     process.exit(await proc.exited);
   }
 
-  const entry = MODES[mode];
+  const entry = MODES.find((m) => m.value === mode);
   if (entry) await entry.fn();
 }
 

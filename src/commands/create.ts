@@ -10,7 +10,7 @@ import {
   tasks,
   text,
 } from "@clack/prompts";
-import { COPYABLE_DIRS, COPYABLE_LABELS, CONFIG_FILES, type CopyableDir } from "../types.js";
+import { COPYABLE_DIRS, COPYABLE_LABELS, type CopyableDir } from "../types.js";
 import {
   readPackagesFromDir,
   getPackageProvidedItems,
@@ -143,7 +143,7 @@ export async function create(): Promise<void> {
   // The user already had a chance to pick packages — those will be auto-installed.
 
   // Step 2: Pick other config files (models.json, keybindings.json)
-  const configFiles = CONFIG_FILES.filter((f) => f !== "settings.json");
+  const configFiles = ["models.json", "keybindings.json"];
   const selectedConfig = await multiselect({
     message: `Copy other config files from ${srcLabel}?`,
     options: configFiles.map((f) => ({ value: f, label: f })),

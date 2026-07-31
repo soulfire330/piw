@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CopyableDir } from "../types.js";
 import { basePath, profilePath } from "./profile.service.js";
@@ -12,10 +12,9 @@ export function listSourceItems(source: string, key: CopyableDir): string[] {
   const dir = join(sourceDir(source), key);
   if (!existsSync(dir)) return [];
   try {
-    const { readdirSync } = require("node:fs");
     return readdirSync(dir, { withFileTypes: true })
-      .filter((e: { name: string }) => !e.name.startsWith("."))
-      .map((e: { name: string }) => e.name);
+      .filter((e) => !e.name.startsWith("."))
+      .map((e) => e.name);
   } catch {
     return [];
   }
@@ -42,7 +41,8 @@ export function copySettingsWithPackages(
     cfg.packages = filtered;
     writeFileSync(dest, JSON.stringify(cfg, null, 2));
   } catch {
-    cpSync(src, dest);
+    // If settings.json is malformed, don't silently copy — skip
+    return;
   }
 }
 
@@ -91,19 +91,3 @@ export function deleteLooseItem(
   if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
 }
 
-/** List all items in a profile directory (both loose and package-managed) */
-export function listAllProfileItems(
-  name: string,
-  key: CopyableDir,
-): string[] {
-  const dir = join(profilePath(name), key);
-  if (!existsSync(dir)) return [];
-  try {
-    const { readdirSync } = require("node:fs");
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((e: { name: string }) => !e.name.startsWith("."))
-      .map((e: { name: string }) => e.name);
-  } catch {
-    return [];
-  }
-}
