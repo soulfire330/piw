@@ -1,10 +1,10 @@
 import {
   cancel,
   confirm,
+  groupMultiselect,
   intro,
   isCancel,
   log,
-  multiselect,
   outro,
   select,
   tasks,
@@ -101,30 +101,7 @@ export async function create(): Promise<void> {
   const srcDir = sourceDir(source);
   const srcLabel = source === "_root_" ? "_root_" : source;
 
-  // Step 1: Pick packages
-  const srcPackages = readPackagesFromDir(srcDir);
-  let inheritedPackages: string[] = [];
-
-  if (srcPackages.length > 0) {
-    const picked = await multiselect({
-      message: `Inherit packages from ${srcLabel}?`,
-      options: srcPackages.map((p) => ({
-        value: p.source,
-        label: p.source,
-      })),
-      initialValues: srcPackages.map((p) => p.source),
-      required: false,
-    });
-
-    if (isCancel(picked)) {
-      cancel("Cancelled");
-      return;
-    }
-
-    inheritedPackages = (picked as string[]) ?? [];
-  }
-
-  // Build set of package-provided items to filter out from loose selection
+  // Build package-provided items set to filter out from loose selection
   const pkgProvided: Record<CopyableDir, Set<string>> = {
     extensions: getPackageProvidedItems(srcDir, "extensions"),
     skills: getPackageProvidedItems(srcDir, "skills"),
@@ -132,75 +109,94 @@ export async function create(): Promise<void> {
     themes: getPackageProvidedItems(srcDir, "themes"),
   };
 
-  // Filter: only include items that are NOT provided by any of the INHERITED packages
-  // (we don't filter based on uninherited packages — those are truly "loose" from the new profile's perspective)
-  // Actually, we should filter out items that belong to ANY installed package in the source,
-  // because the user already decided which packages to inherit — non-inherited packages' items
-  // would become "orphaned" (no package to install them).
-  // Let's filter: show items NOT provided by any package, plus items from inherited packages
-  // But since inherited packages will be auto-installed, we skip those too — they're not "loose"
-  // Simple approach: filter out ALL package-provided items, regardless of whether inherited.
-  // The user already had a chance to pick packages — those will be auto-installed.
+  const groups: Record<string, Array<{ value: string; label: string; hint?: string }>> = {};
 
-  // Step 2: Pick other config files (models.json, keybindings.json)
+  // ── Packages group ──
+  const srcPackages = readPackagesFromDir(srcDir);
+  if (srcPackages.length > 0) {
+    groups["Packages"] = srcPackages.map((p) => ({
+      value: `pkg:${p.source}`,
+      label: p.source,
+      hint: "pi install",
+    }));
+  }
+
+  // ── Config files group ──
   const configFiles = ["models.json", "keybindings.json"];
-  const selectedConfig = await multiselect({
-    message: `Copy other config files from ${srcLabel}?`,
-    options: configFiles.map((f) => ({ value: f, label: f })),
-    required: false,
-  });
+  groups["Config files"] = configFiles.map((f) => ({
+    value: `config:${f}`,
+    label: f,
+    hint: `${source}/`,
+  }));
 
-  if (isCancel(selectedConfig)) {
-    cancel("Cancelled");
-    return;
-  }
-
-  const configsToCopy = (selectedConfig as string[]) ?? [];
-
-  // Step 3: Pick loose resources
-  const selectedDirs = await multiselect({
-    message: `Copy loose resources from ${srcLabel}?`,
-    options: COPYABLE_DIRS.map((d) => ({
-      value: d,
-      label: COPYABLE_LABELS[d],
-      hint:
-        pkgProvided[d].size > 0
-          ? `${pkgProvided[d].size} are package-managed (will be auto-installed if package inherited)`
-          : undefined,
-    })),
-    required: false,
-  });
-
-  if (isCancel(selectedDirs)) {
-    cancel("Cancelled");
-    return;
-  }
-
-  const dirs = (selectedDirs as CopyableDir[]) ?? [];
-  const dirItems: Record<string, string[]> = {};
-
-  for (const d of dirs) {
+  // ── Loose resource groups ──
+  for (const d of COPYABLE_DIRS) {
     const allItems = listSourceItems(source, d);
-    // Filter out package-provided items
     const looseItems = allItems.filter((item) => !pkgProvided[d].has(item));
-    if (looseItems.length === 0) continue;
-
-    const picked = await multiselect({
-      message: `Which loose ${d} to copy?`,
-      options: looseItems.map((item) => ({
-        value: item,
+    if (looseItems.length > 0) {
+      groups[COPYABLE_LABELS[d]] = looseItems.map((item) => ({
+        value: `loose:${d}:${item}`,
         label: item,
-      })),
-      initialValues: looseItems,
-      required: false,
-    });
+        hint: `${d}/`,
+      }));
+    }
+  }
 
-    if (isCancel(picked)) {
+  const groupNames = Object.keys(groups);
+  if (groupNames.length === 0) {
+    log.info("Nothing to copy from source");
+    const proceed = await confirm({
+      message: `Create empty profile "${name}"?`,
+      active: "Create",
+      inactive: "Cancel",
+    });
+    if (isCancel(proceed) || !proceed) {
       cancel("Cancelled");
       return;
     }
+    createProfile(name);
+    log.success(`Launch with: piw ${name}`);
+    outro("Done");
+    return;
+  }
 
-    dirItems[d] = (picked as string[]) ?? [];
+  const picked = await groupMultiselect({
+    message: `Inherit from ${srcLabel}?`,
+    options: groups,
+    groupSpacing: 1,
+    selectableGroups: false,
+    required: false,
+  });
+
+  if (isCancel(picked)) {
+    cancel("Cancelled");
+    return;
+  }
+
+  const selected = (picked as string[]) ?? [];
+  const inheritedPackages: string[] = [];
+  const configsToCopy: string[] = [];
+  const dirItems: Record<string, string[]> = {};
+
+  for (const v of selected) {
+    if (v.startsWith("pkg:")) {
+      inheritedPackages.push(v.slice(4));
+    } else if (v.startsWith("config:")) {
+      configsToCopy.push(v.slice(7));
+    } else if (v.startsWith("loose:")) {
+      const colon1 = v.indexOf(":");
+      const colon2 = v.indexOf(":", colon1 + 1);
+      const d = v.slice(colon1 + 1, colon2);
+      const item = v.slice(colon2 + 1);
+      if (!dirItems[d]) dirItems[d] = [];
+      dirItems[d]!.push(item);
+    }
+  }
+
+  if (inheritedPackages.length === 0 && configsToCopy.length === 0 && Object.keys(dirItems).length === 0) {
+    log.info("Nothing selected");
+    outro("Cancelled");
+    return;
   }
 
   // Summary
@@ -237,10 +233,10 @@ export async function create(): Promise<void> {
           copyConfigFile(name, source, f);
         }
 
-        for (const d of dirs) {
+        for (const d of Object.keys(dirItems)) {
           const items = dirItems[d] ?? [];
           if (items.length > 0) {
-            copyLooseDirItems(name, source, d, items);
+            copyLooseDirItems(name, source, d as CopyableDir, items);
           }
         }
 
