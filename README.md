@@ -1,59 +1,84 @@
 # piw — Pi Profile Manager
 
-Interactive CLI for managing [Pi](https://pi.dev) profiles — like VS Code profiles, but for your coding agent.
+Profile manager for [Pi](https://pi.dev) coding agent with TUI and independent per-profile package installation.
 
-- **Create** profiles with granular inheritance control
-- **List** profiles and their symlink status
-- **Delete** profiles
-- **Rename** profiles
-- **Sync** — toggle what's inherited from base Pi on the fly
-
-## How it works
-
-Each profile lives in `~/.pi/profiles/<name>/` and has a `profile.json` tracking which resources are inherited (symlinked) from base Pi (`~/.pi/agent/`).
-
-| Resource | Inheritable? |
-|---|---|
-| `auth.json` | Symlink to shared credentials |
-| `models.json` | Symlink to shared models |
-| `settings.json` | Symlink or local copy |
-| `keybindings.json` | Symlink or local copy |
-| `extensions/` | Symlink or local dir |
-| `skills/` | Symlink or local dir |
-| `prompts/` | Symlink or local dir |
-| `themes/` | Symlink or local dir |
-| `AGENTS.md` | Always local (identity) |
-| `sessions/` | Always local |
-| `memory/` | Always local |
+- **Create** profiles from `_root_` or other profiles with granular resource selection
+- **Clone** profiles with all packages and resources
+- **Manage** — copy/delete resources, rename, delete profiles, manage `_root_`
+- **Install** packages into selected profiles or `_root_`
+- **JSON output** for scripting (`--json`)
 
 ## Install
 
 ```bash
+npm install -g @soulfire330/piw
+# or
 bun install -g @soulfire330/piw
 ```
 
-Or run directly:
+Or via pi package manager (installs the skill):
 
 ```bash
-bun run bin/piw.ts
+pi install npm:@soulfire330/piw
 ```
+
+## How it works
+
+Each profile lives in `~/.pi/profiles/<name>/` with its own copy of resources.
+Packages are declared in `settings.json` and auto-installed by pi on first launch.
+
+| Resource | Behavior |
+|---|---|
+| `settings.json` | Per-profile package list |
+| `models.json` | Copied from source |
+| `keybindings.json` | Copied from source |
+| `extensions/` | Per-profile copy |
+| `skills/` | Per-profile copy |
+| `prompts/` | Per-profile copy |
+| `themes/` | Per-profile copy |
+| `AGENTS.md` | Always local |
+| `sessions/` | Always local |
+| `memory/` | Always local |
 
 ## Usage
 
 ```bash
-piw          # Interactive mode
-piw create   # Create a new profile
-piw list     # List all profiles
-piw delete   # Delete a profile
-piw rename   # Rename a profile
-piw sync     # Toggle inheritance for an existing profile
+piw                         # Interactive TUI
+piw --help                  # Full CLI reference
+
+# CRUD
+piw create -n work -f _root_           # Create from _root_
+piw create -n empty --empty            # Create empty profile
+piw list                               # List profiles
+piw list --json                        # List profiles (JSON)
+piw show work                          # Show profile details
+piw show work --json                   # Show profile details (JSON)
+piw clone work work2                   # Clone profile
+piw rename old new                     # Rename profile
+piw delete work -y                     # Delete profile
+
+# Packages
+piw install npm:some-pkg               # Install into all profiles + _root_
+piw install npm:some-pkg -t work       # Install into specific profile
+
+# Manage
+piw manage work --show                 # Show resources
+piw manage work --copy-from _root_     # Copy new items from _root_
+piw manage work --rename newname       # Rename
+piw manage work --delete-profile -y    # Delete profile
+
+# Launch pi
+piw work                               # Launch pi with profile
+piw work --help                        # Pass args to pi
 ```
 
 ## Dev
 
 ```bash
 bun install
-bun run typecheck   # tsc --noEmit
-bun run lint        # biome check .
-bun run format      # biome format --write .
+bun run dev          # Run directly (TS, no build)
+bun run build        # Compile TS → JS
+bun run typecheck    # tsc --noEmit
+bun run lint         # biome check .
+bun run format       # biome format --write .
 ```
