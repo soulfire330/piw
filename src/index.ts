@@ -1,33 +1,34 @@
 import { cancel, intro, isCancel, select } from "@clack/prompts";
+import { clone } from "./commands/clone.js";
 import { create } from "./commands/create.js";
+import { deleteCmd } from "./commands/delete.js";
 import { install } from "./commands/install.js";
 import { list } from "./commands/list.js";
 import { manage } from "./commands/manage.js";
-import { listAllProfileDirs } from "./utils/profile.js";
-import { profilePath } from "./utils/symlinks.js";
+import { rename } from "./commands/rename.js";
+import { show } from "./commands/show.js";
+import { listAllProfileDirs, profilePath } from "./services/profile.service.js";
 
 const MODES: Record<
   string,
-  { label: string; hint: string; fn: () => Promise<void> }
+  { label: string; hint: string; fn: (...args: string[]) => Promise<void> }
 > = {
-  create: {
-    label: "Create",
-    hint: "Create a new profile",
-    fn: create,
-  },
-  list: {
-    label: "List",
-    hint: "Show all profiles",
-    fn: list,
+  create: { label: "Create", hint: "Create a new profile", fn: create },
+  list: { label: "List", hint: "Show all profiles", fn: list },
+  show: { label: "Show", hint: "Show profile details", fn: show },
+  clone: {
+    label: "Clone",
+    hint: "Clone a profile with all resources",
+    fn: clone,
   },
   manage: {
     label: "Manage",
-    hint: "Rename, manage resources, or delete a profile",
+    hint: "Packages, resources, rename, delete",
     fn: manage,
   },
   install: {
     label: "Install",
-    hint: "Install a package into a profile",
+    hint: "Install a package into profiles",
     fn: install,
   },
 };
@@ -91,8 +92,60 @@ async function interactive(): Promise<void> {
 async function main(): Promise<void> {
   const cmd = process.argv[2];
 
-  if (cmd && MODES[cmd]) {
-    await MODES[cmd].fn();
+  if (cmd === "--help" || cmd === "-h") {
+    console.log("piw — Pi Profile Manager");
+    console.log("");
+    console.log("Usage:");
+    console.log("  piw                      Interactive mode");
+    console.log("  piw create               Create a profile");
+    console.log("  piw list                 List profiles");
+    console.log("  piw show [name]          Show profile details");
+    console.log("  piw clone [src] [dst]    Clone a profile");
+    console.log("  piw rename <old> [new]   Rename a profile");
+    console.log("  piw delete [name]        Delete a profile");
+    console.log("  piw manage               Manage packages & resources");
+    console.log("  piw install <pkg>        Install a package into profiles");
+    console.log("  piw <profile>            Launch pi with a specific profile");
+    return;
+  }
+
+  if (cmd === "create") {
+    await create();
+    return;
+  }
+
+  if (cmd === "list") {
+    await list();
+    return;
+  }
+
+  if (cmd === "show") {
+    await show(process.argv[3]);
+    return;
+  }
+
+  if (cmd === "clone") {
+    await clone(process.argv[3], process.argv[4]);
+    return;
+  }
+
+  if (cmd === "rename") {
+    await rename(process.argv[3], process.argv[4]);
+    return;
+  }
+
+  if (cmd === "delete") {
+    await deleteCmd(process.argv[3]);
+    return;
+  }
+
+  if (cmd === "manage") {
+    await manage();
+    return;
+  }
+
+  if (cmd === "install") {
+    await install();
     return;
   }
 
@@ -109,21 +162,6 @@ async function main(): Promise<void> {
       });
       process.exit(await proc.exited);
     }
-  }
-
-  if (cmd === "--help" || cmd === "-h") {
-    console.log("piw — Interactive Pi Profile Manager");
-    console.log("");
-    console.log("Usage:");
-    console.log("  piw                Interactive mode");
-    console.log("  piw create         Create a profile");
-    console.log("  piw list           List profiles");
-    console.log(
-      "  piw manage         Manage a profile (rename, resources, delete)",
-    );
-    console.log("  piw install <pkg>  Install a package into a profile");
-    console.log("  piw <profile>      Launch pi with a specific profile");
-    return;
   }
 
   await interactive();

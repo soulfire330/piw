@@ -1,46 +1,29 @@
-// Config files that can be copied from base Pi (~/.pi/agent/).
-// auth.json is always symlinked — not listed here.
-export const COPYABLE_FILES = [
-  "models.json",
-  "settings.json",
-  "keybindings.json",
-] as const;
-
-export const COPYABLE_DIRS = [
-  "extensions",
-  "skills",
-  "prompts",
-  "themes",
-] as const;
-
-export type CopyableFile = (typeof COPYABLE_FILES)[number];
+// Directories that contain resources (from packages or loose).
+export const COPYABLE_DIRS = ["extensions", "skills", "prompts", "themes"] as const;
 export type CopyableDir = (typeof COPYABLE_DIRS)[number];
 
-export const COPYABLE_LABELS: Record<CopyableFile | CopyableDir, string> = {
-  "models.json": "models.json — custom models",
-  "settings.json": "settings.json — settings",
-  "keybindings.json": "keybindings.json — keybindings",
+export const COPYABLE_LABELS: Record<CopyableDir, string> = {
   extensions: "extensions/ — extensions",
   skills: "skills/ — skills",
   prompts: "prompts/ — prompts",
   themes: "themes/ — themes",
 };
 
-// Per-profile metadata stored in ~/.pi/profiles/<name>/profile.json
-export interface ProfileConfig {
-  name: string;
-  createdAt: string; // ISO date
-  /** Where to copy from: "base" or a profile name */
-  source: string;
-  /** Files to copy (false = skip) */
-  files: Record<CopyableFile, boolean>;
-  /** Directory items to copy (empty = none) */
-  dirs: Record<CopyableDir, string[]>;
+// Config files at profile root.
+export const CONFIG_FILES = ["models.json", "settings.json", "keybindings.json"] as const;
+export type ConfigFile = (typeof CONFIG_FILES)[number];
+
+export interface PackageInfo {
+  source: string; // npm:foo, git:github.com/x/y, /local/path
+  kind: "npm" | "git" | "local" | "unknown";
+  id: string; // unique identifier for dedup
 }
 
-export interface ProfileInfo {
-  name: string;
-  createdAt: string;
-  dir: string;
-  config: ProfileConfig;
+export interface PackageResources {
+  [packageId: string]: {
+    extensions: string[];
+    skills: string[];
+    prompts: string[];
+    themes: string[];
+  };
 }

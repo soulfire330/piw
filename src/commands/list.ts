@@ -1,16 +1,7 @@
 import { intro, log, outro } from "@clack/prompts";
-
-import { COPYABLE_DIRS, COPYABLE_FILES, COPYABLE_LABELS } from "../types.js";
-import { listProfiles } from "../utils/profile.js";
-
-function fileDesc(on: boolean): string {
-  return on ? "copy" : "none";
-}
-
-function dirDesc(items: string[]): string {
-  if (items.length === 0) return "none";
-  return `${items.length} items: ${items.join(", ")}`;
-}
+import { COPYABLE_DIRS, COPYABLE_LABELS } from "../types.js";
+import { readPackages, listLooseItems } from "../services/package.service.js";
+import { listProfiles } from "../services/profile.service.js";
 
 export async function list(): Promise<void> {
   intro("piw — Profiles");
@@ -27,18 +18,20 @@ export async function list(): Promise<void> {
   log.info(`Found ${profiles.length} profile(s):\n`);
 
   for (const p of profiles) {
-    const src = p.config.source === "base" ? "Base" : p.config.source;
+    const pkgs = readPackages(p.name);
     const lines: string[] = [
       `▸ ${p.name}`,
-      `  Source: ${src}`,
-      `  Created: ${new Date(p.createdAt).toLocaleDateString()}`,
+      `  Created: ${p.createdAt.toLocaleDateString()}`,
+      pkgs.length > 0
+        ? `  Packages: ${pkgs.length} (${pkgs.map((x) => x.id).join(", ")})`
+        : "  Packages: none",
     ];
 
-    for (const f of COPYABLE_FILES) {
-      lines.push(`  ${COPYABLE_LABELS[f]}: ${fileDesc(p.config.files[f])}`);
-    }
     for (const d of COPYABLE_DIRS) {
-      lines.push(`  ${COPYABLE_LABELS[d]}: ${dirDesc(p.config.dirs[d])}`);
+      const loose = listLooseItems(p.name, d);
+      lines.push(
+        `  ${COPYABLE_LABELS[d]}: ${loose.length > 0 ? loose.join(", ") : "none"}`,
+      );
     }
 
     log.message(`${lines.join("\n")}\n`);

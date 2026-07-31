@@ -3,18 +3,18 @@ import {
   intro,
   isCancel,
   log,
+  multiselect,
   outro,
-  select,
   spinner,
   text,
 } from "@clack/prompts";
-import { listProfiles } from "../utils/profile.js";
-import { profilePath } from "../utils/symlinks.js";
+import { listAllProfileDirs } from "../services/profile.service.js";
+import { profilePath } from "../services/profile.service.js";
 
 export async function install(): Promise<void> {
   intro("piw — Install Package");
 
-  const profiles = listProfiles();
+  const profiles = listAllProfileDirs();
 
   if (profiles.length === 0) {
     log.warn("No profiles found. Create one first: piw create");
@@ -22,20 +22,18 @@ export async function install(): Promise<void> {
     return;
   }
 
-  const target = await select({
-    message: "Select profile to install into:",
-    options: profiles.map((p) => ({
-      value: p.name,
-      label: p.name,
-    })),
+  const targets = await multiselect({
+    message: "Select profiles to install into:",
+    options: profiles.map((name) => ({ value: name, label: name })),
+    initialValues: profiles,
+    required: true,
   });
 
-  if (isCancel(target)) {
+  if (isCancel(targets)) {
     cancel("Cancelled");
     return;
   }
 
-  // Package arg: position 2 is the subcommand, position 3 is the package
   const argPkg = process.argv[3];
 
   const pkg =
@@ -54,26 +52,28 @@ export async function install(): Promise<void> {
     return;
   }
 
-  const dir = profilePath(target);
-  const spin = spinner();
+  for (const target of targets as string[]) {
+    const dir = profilePath(target);
+    const spin = spinner();
 
-  spin.start(`pi install ${pkg} → ${target}`);
+    spin.start(`pi install ${pkg} → ${target}`);
 
-  const proc = Bun.spawn(["pi", "install", pkg], {
-    env: { ...process.env, PI_CODING_AGENT_DIR: dir },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+    const proc = Bun.spawn(["pi", "install", pkg], {
+      env: { ...process.env, PI_CODING_AGENT_DIR: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-  const exitCode = await proc.exited;
+    const exitCode = await proc.exited;
 
-  if (exitCode === 0) {
-    spin.stop(`Installed ${pkg} into "${target}"`);
-  } else {
-    const err = await new Response(proc.stderr).text();
-    spin.stop(err.trim() || `pi install exited with code ${exitCode}`);
+    if (exitCode === 0) {
+      spin.stop(`Installed ${pkg} into "${target}"`);
+    } else {
+      const err = await new Response(proc.stderr).text();
+      spin.stop(err.trim() || `pi install exited with code ${exitCode}`);
+    }
   }
 
-  log.info(`Launch profile with: pi-profile ${target}`);
+  log.info(`Launch profile with: piw <name>`);
   outro("Done");
 }
