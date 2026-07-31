@@ -323,10 +323,18 @@ export async function manage(opts?: ManageOptions): Promise<void> {
       return;
     }
     if (o.renameTo) {
+          if (o.profile === "_root_") {
+            console.error("Cannot rename _root_");
+            process.exit(1);
+          }
       await rename(o.profile, o.renameTo);
       return;
     }
     if (o.deleteProfile) {
+          if (o.profile === "_root_") {
+            console.error("Cannot delete _root_");
+            process.exit(1);
+          }
       await deleteCmd({ name: o.profile, yes: o.yes });
       return;
     }
@@ -352,8 +360,11 @@ export async function manage(opts?: ManageOptions): Promise<void> {
 
   const target = (o.profile as string) ??
     (await select({
-      message: "Select profile:",
-      options: profiles.map((name) => ({ value: name, label: name })),
+      message: "Select profile or _root_:",
+      options: [
+        { value: "_root_", label: "_root_", hint: `${process.env.HOME ?? "~"}/.pi/agent/` },
+        ...profiles.map((name) => ({ value: name, label: name })),
+      ],
     }));
 
   if (isCancel(target)) {
@@ -361,15 +372,21 @@ export async function manage(opts?: ManageOptions): Promise<void> {
     return;
   }
 
-  const action = await select({
-    message: `Manage "${target}"`,
-    options: [
-      { value: "show", label: "Show resources" },
-      { value: "copy", label: "Copy from another profile" },
-      { value: "delete", label: "Delete items" },
+  const isRoot = target === "_root_";
+  const actionOptions: Array<{ value: string; label: string }> = [
+    { value: "show", label: "Show resources" },
+    { value: "copy", label: "Copy from another profile" },
+    { value: "delete", label: "Delete items" },
+  ];
+  if (!isRoot) {
+    actionOptions.push(
       { value: "rename", label: "Rename profile" },
       { value: "rm", label: "Delete profile" },
-    ],
+    );
+  }
+  const action = await select({
+    message: `Manage "${target}"`,
+    options: actionOptions,
   });
 
   if (isCancel(action)) {

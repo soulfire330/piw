@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CopyableDir } from "../types.js";
-import { basePath, profilePath } from "./profile.service.js";
+import { basePath, profilePath, resolvePath } from "./profile.service.js";
 
 function sourceDir(source: string): string {
   return source === "_root_" ? basePath() : profilePath(source);
@@ -27,7 +27,7 @@ export function copySettingsWithPackages(
   selectedPackages: string[],
 ): void {
   const src = join(sourceDir(source), "settings.json");
-  const dest = join(profilePath(name), "settings.json");
+  const dest = join(resolvePath(name), "settings.json");
 
   if (!existsSync(src)) return;
 
@@ -53,7 +53,7 @@ export function copyConfigFile(
   source: string,
   filename: string,
 ): void {
-  const dest = join(profilePath(name), filename);
+  const dest = join(resolvePath(name), filename);
   const src = join(sourceDir(source), filename);
   if (existsSync(src)) cpSync(src, dest, { force: true, recursive: true });
 }
@@ -65,7 +65,7 @@ export function copyLooseDirItems(
   key: CopyableDir,
   items: string[],
 ): void {
-  const dest = join(profilePath(name), key);
+  const dest = join(resolvePath(name), key);
   mkdirSync(dest, { recursive: true });
   for (const item of items) {
     const srcItem = join(sourceDir(source), key, item);
@@ -82,7 +82,7 @@ export function deleteLooseItem(
   key: CopyableDir,
   item: string,
 ): void {
-  const dest = join(profilePath(name), key, item);
+  const dest = join(resolvePath(name), key, item);
   if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
 }
 

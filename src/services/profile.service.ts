@@ -12,6 +12,11 @@ export function profilePath(name: string): string {
   return `${PROFILES_DIR}/${name}`;
 }
 
+/** Resolve a name to a directory — handles _root_ → base Pi dir */
+export function resolvePath(name: string): string {
+  return name === "_root_" ? basePath() : profilePath(name);
+}
+
 export function basePath(): string {
   return `${process.env.HOME}/.pi/agent`;
 }

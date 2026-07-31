@@ -2,10 +2,10 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { PackageInfo, PackageResources } from "../types.js";
 import { COPYABLE_DIRS } from "../types.js";
-import { profilePath } from "./profile.service.js";
+import { resolvePath } from "./profile.service.js";
 
 export function readPackages(name: string): PackageInfo[] {
-  return readPackagesFromDir(profilePath(name));
+  return readPackagesFromDir(resolvePath(name));
 }
 
 // ── Settings ───────────────────────────────────────────────────
@@ -171,9 +171,9 @@ export function listLooseItems(
   name: string,
   dir: "extensions" | "skills" | "prompts" | "themes",
 ): string[] {
-  const profileDir = join(profilePath(name), dir);
+  const profileDir = join(resolvePath(name), dir);
   const all = listDir(profileDir);
-  const resources = getPackageResourcesFromDir(profilePath(name));
+  const resources = getPackageResourcesFromDir(resolvePath(name));
   const provided = new Set<string>();
   for (const pkgId of Object.keys(resources)) {
     const pkg = resources[pkgId];
@@ -190,7 +190,7 @@ export function listPackageItems(
   name: string,
   dir: "extensions" | "skills" | "prompts" | "themes",
 ): Map<string, string[]> {
-  const resources = getPackageResourcesFromDir(profilePath(name));
+  const resources = getPackageResourcesFromDir(resolvePath(name));
   const map = new Map<string, string[]>();
   for (const pkgId of Object.keys(resources)) {
     const pkg = resources[pkgId];

@@ -1,8 +1,8 @@
-import { profilePath } from "./profile.service.js";
+import { resolvePath } from "./profile.service.js";
 
 export async function piInstall(profile: string, pkg: string): Promise<{ ok: boolean; error?: string }> {
   const proc = Bun.spawn(["pi", "install", pkg], {
-    env: { ...process.env, PI_CODING_AGENT_DIR: profilePath(profile) },
+    env: { ...process.env, PI_CODING_AGENT_DIR: resolvePath(profile) },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -14,7 +14,7 @@ export async function piInstall(profile: string, pkg: string): Promise<{ ok: boo
 
 export async function piRemove(profile: string, pkg: string): Promise<{ ok: boolean; error?: string }> {
   const proc = Bun.spawn(["pi", "remove", pkg], {
-    env: { ...process.env, PI_CODING_AGENT_DIR: profilePath(profile) },
+    env: { ...process.env, PI_CODING_AGENT_DIR: resolvePath(profile) },
     stdout: "pipe",
     stderr: "pipe",
   });
