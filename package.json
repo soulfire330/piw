@@ -1,7 +1,7 @@
 {
   "name": "@soulfire330/piw",
   "version": "0.0.1",
-  "description": "Interactive Pi profile manager — CRUD + granular symlink-based inheritance, like VS Code profiles.",
+  "description": "Pi profile manager with TUI and independent per-profile package installation.",
   "keywords": ["pi", "pi-package", "profile", "profiles", "cli", "piw"],
   "pi": {
     "skills": ["./skills"]
