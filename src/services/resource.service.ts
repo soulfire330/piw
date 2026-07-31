@@ -36,6 +36,7 @@ export function copySettingsWithPackages(
     const raw: unknown[] = cfg.packages ?? [];
     const filtered = raw.filter((p) => {
       const src = typeof p === "string" ? p : (p as { source: string }).source;
+      // ponytail: if pi adds versioned sources (npm:foo@1.2.3), normalize via parsePackageSource
       return selectedPackages.includes(src);
     });
     cfg.packages = filtered;
@@ -53,9 +54,8 @@ export function copyConfigFile(
   filename: string,
 ): void {
   const dest = join(profilePath(name), filename);
-  if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
   const src = join(sourceDir(source), filename);
-  if (existsSync(src)) cpSync(src, dest);
+  if (existsSync(src)) cpSync(src, dest, { force: true, recursive: true });
 }
 
 /** Copy loose directory items from source to profile */
@@ -66,17 +66,12 @@ export function copyLooseDirItems(
   items: string[],
 ): void {
   const dest = join(profilePath(name), key);
-  if (items.length === 0) {
-    mkdirSync(dest, { recursive: true });
-    return;
-  }
   mkdirSync(dest, { recursive: true });
   for (const item of items) {
     const srcItem = join(sourceDir(source), key, item);
     const dstItem = join(dest, item);
     if (existsSync(srcItem)) {
-      if (existsSync(dstItem)) rmSync(dstItem, { recursive: true, force: true });
-      cpSync(srcItem, dstItem, { recursive: true });
+      cpSync(srcItem, dstItem, { force: true, recursive: true });
     }
   }
 }

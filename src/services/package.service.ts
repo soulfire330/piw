@@ -24,7 +24,8 @@ export function readPackagesFromDir(dir: string): PackageInfo[] {
       }
       return { source: String(p), kind: "unknown" as const, id: String(p) };
     });
-  } catch {
+  } catch (err) {
+    console.warn(`settings.json parse error in ${dir}:`, (err as Error).message);
     return [];
   }
 }
@@ -60,12 +61,12 @@ function listDir(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true })
       .filter((e) => !e.name.startsWith("."))
       .map((e) => e.name);
-  } catch {
+  } catch (err) {
+    console.warn(`Failed to list directory ${dir}:`, (err as Error).message);
     return [];
   }
 }
 
-/** Scan installed packages in a directory and return what resources each provides */
 /** Scan installed packages in any directory */
 export function getPackageResourcesFromDir(dir: string): PackageResources {
   const result: PackageResources = {};

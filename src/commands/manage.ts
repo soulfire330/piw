@@ -146,7 +146,7 @@ async function deleteItems(name: string): Promise<void> {
   // Packages
   const pkgs = readPackages(name);
   for (const p of pkgs) {
-    options.push({ value: `pkg:${p.source}`, label: p.source, hint: "package" });
+    options.push({ value: `pkg\0${p.source}`, label: p.source, hint: "package" });
   }
 
   // Loose resources
@@ -154,7 +154,7 @@ async function deleteItems(name: string): Promise<void> {
     const items = listLooseItems(name, d);
     for (const item of items) {
       options.push({
-        value: `loose:${d}/${item}`,
+        value: `loose\0${d}\0${item}`,
         label: item,
         hint: `${d}/`,
       });
@@ -181,15 +181,11 @@ async function deleteItems(name: string): Promise<void> {
   const toRemoveLoose: Array<{ dir: string; item: string }> = [];
 
   for (const v of selected) {
-    if (v.startsWith("pkg:")) {
-      toRemovePkgs.push(v.slice(4));
-    } else if (v.startsWith("loose:")) {
-      const rest = v.slice(6);
-      const slash = rest.indexOf("/");
-      toRemoveLoose.push({
-        dir: rest.slice(0, slash),
-        item: rest.slice(slash + 1),
-      });
+    const parts = v.split("\0");
+    if (parts[0] === "pkg") {
+      toRemovePkgs.push(parts[1]!);
+    } else if (parts[0] === "loose") {
+      toRemoveLoose.push({ dir: parts[1]!, item: parts[2]! });
     }
   }
 

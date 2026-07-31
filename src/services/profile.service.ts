@@ -61,8 +61,13 @@ export function listProfiles(): ProfileInfo[] {
 export function createProfile(name: string): string {
   ensureProfilesDir();
   const dir = profilePath(name);
-  if (existsSync(dir)) throw new Error(`Profile "${name}" already exists`);
-  mkdirSync(dir, { recursive: true });
+  try {
+    mkdirSync(dir); // atomic — throws EEXIST if already exists
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code === "EEXIST")
+      throw new Error(`Profile "${name}" already exists`);
+    throw err;
+  }
   mkdirSync(join(dir, "sessions"), { recursive: true });
   mkdirSync(join(dir, "memory"), { recursive: true });
   writeFileSync(join(dir, "AGENTS.md"), "");

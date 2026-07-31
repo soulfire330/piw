@@ -7,13 +7,14 @@ import {
   select,
   text,
 } from "@clack/prompts";
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { COPYABLE_DIRS } from "../types.js";
 import {
   createProfile,
   listAllProfileDirs,
   profilePath,
+  validateProfileName,
 } from "../services/profile.service.js";
 import { readPackages } from "../services/package.service.js";
 import { copyConfigFile, copyLooseDirItems } from "../services/resource.service.js";
@@ -43,12 +44,7 @@ export async function clone(source?: string, target?: string): Promise<void> {
     const val = await text({
       message: "New profile name:",
       placeholder: `${source}-copy`,
-      validate: (v) => {
-        if (!v || v.trim().length === 0) return "Name is required";
-        if (!/^[a-z0-9_-]+$/i.test(v))
-          return "Only letters, numbers, hyphens, underscores";
-        return undefined;
-      },
+      validate: (v) => validateProfileName(v as string),
     });
 
     if (isCancel(val)) {
@@ -76,10 +72,9 @@ export async function clone(source?: string, target?: string): Promise<void> {
   for (const d of COPYABLE_DIRS) {
     const srcD = join(srcDir, d);
     if (!existsSync(srcD)) continue;
-    const { readdirSync } = require("node:fs") as typeof import("fs");
     const items = readdirSync(srcD, { withFileTypes: true })
-      .filter((e: { name: string }) => !e.name.startsWith("."))
-      .map((e: { name: string }) => e.name);
+      .filter((e) => !e.name.startsWith("."))
+      .map((e) => e.name);
     if (items.length > 0) {
       copyLooseDirItems(target, source, d, items);
     }
