@@ -2,7 +2,7 @@
   "name": "@soulfire330/piw",
   "version": "0.0.1",
   "description": "Interactive Pi profile manager — CRUD + granular symlink-based inheritance, like VS Code profiles.",
-  "keywords": ["pi", "pi-package", "profile", "profiles", "pi-profile", "clack"],
+  "keywords": ["pi", "profile", "profiles", "pi-profile", "clack", "piw"],
   "license": "MIT",
   "type": "module",
   "bin": {
