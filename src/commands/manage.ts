@@ -1,10 +1,10 @@
 import {
   cancel,
   confirm,
+  groupMultiselect,
   intro,
   isCancel,
   log,
-  multiselect,
   outro,
   select,
 } from "@clack/prompts";
@@ -54,47 +54,63 @@ async function copyFromOther(name: string): Promise<void> {
       ? `${home}/.pi/agent`
       : `${home}/.pi/profiles/${src}`;
 
-  // Step 1: Pick packages from source that are not already in target
+  // Pick packages and loose resources in one grouped multiselect
   const targetPkgs = new Set(readPackages(name).map((p) => p.source));
   const srcPkgs = readPackagesFromDir(srcDir);
   const newPkgs = srcPkgs.filter((p) => !targetPkgs.has(p.source));
 
-  let inheritedPkgs: string[] = [];
+  const groups: Record<string, Array<{ value: string; label: string; hint?: string }>> = {};
+  const inheritedPkgs: string[] = [];
+  const dirItems: Record<string, string[]> = {};
 
   if (newPkgs.length > 0) {
-    const picked = await multiselect({
-      message: `Install packages from ${src}? (${newPkgs.length} new)`,
-      options: newPkgs.map((p) => ({ value: p.source, label: p.source })),
-      initialValues: newPkgs.map((p) => p.source),
-      required: false,
-    });
-
-    if (isCancel(picked)) return;
-    inheritedPkgs = (picked as string[]) ?? [];
-  } else {
-    log.info("No new packages to copy");
+    groups["Packages"] = newPkgs.map((p) => ({
+      value: `pkg:${p.source}`,
+      label: p.source,
+      hint: "package",
+    }));
   }
-
-  // Step 2: Pick loose resources (only those not in target)
-  const dirItems: Record<string, string[]> = {};
 
   for (const d of COPYABLE_DIRS) {
     const srcItems = listSourceItems(src, d);
     const curItems = listLooseItems(name, d);
     const newItems = srcItems.filter((i) => !curItems.includes(i));
+    if (newItems.length > 0) {
+      groups[COPYABLE_LABELS[d]] = newItems.map((item) => ({
+        value: `loose:${d}:${item}`,
+        label: item,
+        hint: `${d}/`,
+      }));
+    }
+  }
 
-    if (newItems.length === 0) continue;
+  const groupNames = Object.keys(groups);
+  if (groupNames.length === 0) {
+    log.info("Nothing to copy");
+    return;
+  }
 
-    const picked = await multiselect({
-      message: `Copy loose ${d} from ${src}? (${newItems.length} new)`,
-      options: newItems.map((item) => ({ value: item, label: item })),
-      initialValues: newItems,
-      required: false,
-    });
+  const picked = await groupMultiselect({
+    message: `Copy items from ${src}?`,
+    options: groups,
+    groupSpacing: 1,
+    selectableGroups: false,
+    required: false,
+  });
 
-    if (isCancel(picked)) return;
-    const items = (picked as string[]) ?? [];
-    if (items.length > 0) dirItems[d] = items;
+  if (isCancel(picked)) return;
+
+  for (const v of (picked as string[]) ?? []) {
+    if (v.startsWith("pkg:")) {
+      inheritedPkgs.push(v.slice(4));
+    } else if (v.startsWith("loose:")) {
+      const colon1 = v.indexOf(":");
+      const colon2 = v.indexOf(":", colon1 + 1);
+      const d = v.slice(colon1 + 1, colon2);
+      const item = v.slice(colon2 + 1);
+      if (!dirItems[d]) dirItems[d] = [];
+      dirItems[d]!.push(item);
+    }
   }
 
   const pkgCount = inheritedPkgs.length;
@@ -141,57 +157,71 @@ async function copyFromOther(name: string): Promise<void> {
 // ── Delete items ───────────────────────────────────────────────
 
 async function deleteItems(name: string): Promise<void> {
-  const options: Array<{ value: string; label: string; hint?: string }> = [];
+  const toRemovePkgs: string[] = [];
+  const toRemoveLoose: Array<{ dir: string; item: string }> = [];
 
-  // Packages
+  const groups: Record<string, Array<{ value: string; label: string; hint?: string }>> = {};
+
+  // ── Packages group ──
   const pkgs = readPackages(name);
-  for (const p of pkgs) {
-    options.push({ value: `pkg\0${p.source}`, label: p.source, hint: "package" });
+  if (pkgs.length > 0) {
+    groups["Packages"] = pkgs.map((p) => ({
+      value: `pkg:${p.source}`,
+      label: p.source,
+      hint: "package",
+    }));
   }
 
-  // Loose resources
+  // ── Loose resource groups ──
   for (const d of COPYABLE_DIRS) {
     const items = listLooseItems(name, d);
-    for (const item of items) {
-      options.push({
-        value: `loose\0${d}\0${item}`,
+    if (items.length > 0) {
+      groups[COPYABLE_LABELS[d]] = items.map((item) => ({
+        value: `loose:${d}:${item}`,
         label: item,
         hint: `${d}/`,
-      });
+      }));
     }
   }
 
-  if (options.length === 0) {
+  const groupNames = Object.keys(groups);
+  if (groupNames.length === 0) {
     log.info("Nothing to delete");
     return;
   }
 
-  const picked = await multiselect({
-    message: `Delete items from ${name}:`,
-    options,
+  const picked = await groupMultiselect({
+    message: `Delete items from "${name}"?`,
+    options: groups,
+    groupSpacing: 1,
+    selectableGroups: false,
     required: false,
   });
 
   if (isCancel(picked)) return;
 
-  const selected = (picked as string[]) ?? [];
-  if (selected.length === 0) return;
-
-  const toRemovePkgs: string[] = [];
-  const toRemoveLoose: Array<{ dir: string; item: string }> = [];
-
-  for (const v of selected) {
-    const parts = v.split("\0");
-    if (parts[0] === "pkg") {
-      toRemovePkgs.push(parts[1]!);
-    } else if (parts[0] === "loose") {
-      toRemoveLoose.push({ dir: parts[1]!, item: parts[2]! });
+  for (const v of (picked as string[]) ?? []) {
+    if (v.startsWith("pkg:")) {
+      toRemovePkgs.push(v.slice(4));
+    } else if (v.startsWith("loose:")) {
+      const colon1 = v.indexOf(":");
+      const colon2 = v.indexOf(":", colon1 + 1);
+      const d = v.slice(colon1 + 1, colon2);
+      const item = v.slice(colon2 + 1);
+      toRemoveLoose.push({ dir: d, item });
     }
   }
 
+  const pkgCount = toRemovePkgs.length;
+  const looseCount = toRemoveLoose.length;
+  if (pkgCount === 0 && looseCount === 0) {
+    log.info("Nothing selected");
+    return;
+  }
+
   const summary = [
-    toRemovePkgs.length > 0 ? `${toRemovePkgs.length} package(s)` : "",
-    toRemoveLoose.length > 0 ? `${toRemoveLoose.length} loose resource(s)` : "",
+    pkgCount > 0 ? `${pkgCount} package(s)` : "",
+    looseCount > 0 ? `${looseCount} loose resource(s)` : "",
   ]
     .filter(Boolean)
     .join(", ");
