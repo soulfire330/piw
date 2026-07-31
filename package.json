@@ -1,10 +1,19 @@
 {
   "name": "@soulfire330/piw",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Pi profile manager with TUI and independent per-profile package installation.",
-  "keywords": ["pi", "pi-package", "profile", "profiles", "cli", "piw"],
+  "keywords": [
+    "pi",
+    "pi-package",
+    "profile",
+    "profiles",
+    "cli",
+    "piw"
+  ],
   "pi": {
-    "skills": ["./skills"]
+    "skills": [
+      "./skills"
+    ]
   },
   "license": "MIT",
   "type": "module",
