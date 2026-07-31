@@ -11,7 +11,8 @@
     "rootDir": "src",
     "declaration": true,
     "noUncheckedIndexedAccess": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "types": ["bun"]
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]
