@@ -1,7 +1,11 @@
 {
   "name": "@soulfire330/piw",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Pi profile manager with TUI and independent per-profile package installation.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soulfire330/piw.git"
+  },
   "keywords": [
     "pi",
     "pi-package",
