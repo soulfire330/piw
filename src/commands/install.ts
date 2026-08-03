@@ -1,5 +1,6 @@
 import type { InstallOptions } from "../types.js";
 import { listAllProfileDirs, basePath } from "../services/profile.service.js";
+import { spawn } from "../spawn.js";
 
 export async function install(pkgOrOpts?: string | InstallOptions): Promise<void> {
   const opts: InstallOptions =
@@ -70,7 +71,7 @@ export async function install(pkgOrOpts?: string | InstallOptions): Promise<void
 
       spin.start(`pi install ${pkg} → ${label}`);
 
-      const proc = Bun.spawn(["pi", "install", pkg], {
+      const proc = spawn(["pi", "install", pkg], {
         env: { ...process.env, PI_CODING_AGENT_DIR: dir },
         stdout: "pipe",
         stderr: "pipe",
@@ -81,7 +82,7 @@ export async function install(pkgOrOpts?: string | InstallOptions): Promise<void
       if (exitCode === 0) {
         spin.stop(`Installed ${pkg} into "${label}"`);
       } else {
-        const err = await new Response(proc.stderr).text();
+        const err = await new Response(proc.stderr as any).text();
         spin.stop(err.trim() || `pi install exited with code ${exitCode}`);
       }
     }
@@ -97,7 +98,7 @@ export async function install(pkgOrOpts?: string | InstallOptions): Promise<void
     const label = target === "_root_" ? "_root_" : target;
     console.log(`pi install ${pkg} → ${label}`);
 
-    const proc = Bun.spawn(["pi", "install", pkg], {
+    const proc = spawn(["pi", "install", pkg], {
       env: { ...process.env, PI_CODING_AGENT_DIR: dir },
       stdout: "inherit",
       stderr: "inherit",

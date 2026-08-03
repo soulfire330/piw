@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { spawn } from "./spawn.js";
 import type {
   CreateOptions,
   CloneOptions,
@@ -196,7 +197,7 @@ async function main(): Promise<void> {
       // Only proceed if it's actually a profile directory
       if (profiles.includes(cmd)) {
         console.log(`Launching pi with profile "${cmd}"...`);
-        const proc = Bun.spawn(["pi", ...process.argv.slice(3)], {
+        const proc = spawn(["pi", ...process.argv.slice(3)], {
           env: { ...process.env, PI_CODING_AGENT_DIR: dir },
           stdin: "inherit",
           stdout: "inherit",

@@ -1,5 +1,6 @@
 import { cancel, intro, isCancel, select } from "@clack/prompts";
 import { clone } from "./commands/clone.js";
+import { spawn } from "./spawn.js";
 import { create } from "./commands/create.js";
 import { deleteCmd } from "./commands/delete.js";
 import { install } from "./commands/install.js";
@@ -75,7 +76,7 @@ export default async function interactive(): Promise<void> {
 
     const dir = profilePath(target);
     console.log(`Launching pi with profile "${target}"...`);
-    const proc = Bun.spawn(["pi"], {
+    const proc = spawn(["pi"], {
       env: { ...process.env, PI_CODING_AGENT_DIR: dir },
       stdin: "inherit",
       stdout: "inherit",
