@@ -80,13 +80,15 @@ Copy-on-write: inherit resources at creation time, then profiles diverge indepen
 
 ## Install
 
+> **Important:** `piw` is a CLI tool. You need a global install first so the `piw` command is on your PATH. The Pi package install is optional — it only adds the skill so Pi can help you use piw commands.
+
 ```bash
-# Global CLI
+# Step 1 — global CLI (REQUIRED)
 npm install -g @soulfire330/piw
 # or
 bun install -g @soulfire330/piw
 
-# As Pi package (installs the skill so Pi knows piw commands)
+# Step 2 — Pi skill (optional, lets Pi suggest piw commands)
 pi install npm:@soulfire330/piw
 ```
 

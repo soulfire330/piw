@@ -15,6 +15,20 @@ Each profile lives in `~/.pi/profiles/<name>/` and inherits resources
 (extensions, skills, prompts, themes, configs, packages) from `_root_`
 (`~/.pi/agent/`) or from other profiles.
 
+## Install
+
+`piw` is a CLI tool — install it globally first:
+
+```bash
+npm install -g @soulfire330/piw
+```
+
+Then (optionally) register the skill so Pi can assist with piw commands:
+
+```bash
+pi install npm:@soulfire330/piw
+```
+
 ## Quick reference
 
 ```bash
