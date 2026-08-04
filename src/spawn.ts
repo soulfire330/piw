@@ -1,5 +1,19 @@
 import { spawn as nodeSpawn } from "node:child_process";
 
+function capture(stream: NodeJS.ReadableStream | null): Promise<string> {
+  if (!stream) return Promise.resolve("");
+
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    const done = () => resolve(Buffer.concat(chunks).toString());
+    stream.on("data", (chunk: Buffer | string) => {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    });
+    stream.on("end", done);
+    stream.on("error", done);
+  });
+}
+
 export function spawn(
   cmd: string[],
   opts: {
@@ -29,7 +43,8 @@ export function spawn(
     }),
     // biome-ignore lint/suspicious/noExplicitAny: cast to escape never-reduced union
     stdout: (proc as any).stdout as NodeJS.ReadableStream | null,
+    // Capture piped stderr while the child is running; after close Node destroys the stream.
     // biome-ignore lint/suspicious/noExplicitAny: cast to escape never-reduced union
-    stderr: (proc as any).stderr as NodeJS.ReadableStream | null,
+    stderr: capture((proc as any).stderr as NodeJS.ReadableStream | null),
   };
 }

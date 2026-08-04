@@ -82,7 +82,7 @@ export async function install(pkgOrOpts?: string | InstallOptions): Promise<void
       if (exitCode === 0) {
         spin.stop(`Installed ${pkg} into "${label}"`);
       } else {
-        const err = await new Response(proc.stderr as any).text();
+        const err = await proc.stderr;
         spin.stop(err.trim() || `pi install exited with code ${exitCode}`);
       }
     }

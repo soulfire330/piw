@@ -9,7 +9,7 @@ export async function piInstall(profile: string, pkg: string): Promise<{ ok: boo
   });
   const code = await proc.exited;
   if (code === 0) return { ok: true };
-  const err = await new Response(proc.stderr as any).text();
+  const err = await proc.stderr;
   return { ok: false, error: err.trim() || `pi install exited with code ${code}` };
 }
 
@@ -21,6 +21,6 @@ export async function piRemove(profile: string, pkg: string): Promise<{ ok: bool
   });
   const code = await proc.exited;
   if (code === 0) return { ok: true };
-  const err = await new Response(proc.stderr as any).text();
+  const err = await proc.stderr;
   return { ok: false, error: err.trim() || `pi remove exited with code ${code}` };
 }
