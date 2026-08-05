@@ -35,6 +35,8 @@ piw
 
 **Install** — pick a package (npm or git), pick which profiles to install it into (including `_root_`). One command, multiple targets.
 
+**Update extensions** — bulk-run `pi update --extensions` across the profiles you select (including `_root_`). Multiselect, one pass.
+
 ## CLI quick examples
 
 Everything the TUI can do is also available non-interactively:
@@ -44,6 +46,7 @@ piw create -n work -f _root_                     # Create from root
 piw create -n minimal -f _root_ --packages npm:ponytail,npm:pi-env -y
 piw clone work experiment                        # Clone
 piw install npm:some-pkg -t work,experiment      # Install into specific profiles
+piw update -t work,experiment                     # Update extensions in specific profiles
 piw manage work --copy-from _root_               # Pull new items from root
 piw list --json                                  # Machine-readable output
 piw work                                         # Launch Pi with profile

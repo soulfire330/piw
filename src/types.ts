@@ -55,6 +55,10 @@ export interface InstallOptions {
   targets?: string[];
 }
 
+export interface UpdateOptions {
+  targets?: string[];
+}
+
 export interface ManageOptions {
   profile?: string;
   show?: boolean;

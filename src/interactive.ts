@@ -4,6 +4,7 @@ import { spawn } from "./spawn.js";
 import { create } from "./commands/create.js";
 import { deleteCmd } from "./commands/delete.js";
 import { install } from "./commands/install.js";
+import { update } from "./commands/update.js";
 import { manage } from "./commands/manage.js";
 import { listAllProfileDirs, profilePath } from "./services/profile.service.js";
 
@@ -31,6 +32,12 @@ const MODES = [
     label: "Install",
     hint: "Install a package into profiles",
     fn: install,
+  },
+  {
+    value: "update",
+    label: "Update extensions",
+    hint: "Bulk update pi extensions in profiles",
+    fn: update,
   },
 ];
 

@@ -5,7 +5,7 @@ description: >-
   profiles with granular resource inheritance. Use for piw, profile, profiles,
   управление профилями, создать профиль, удалить профиль, клонировать профиль,
   переименовать профиль, список профилей, установка пакетов в профили,
-  pi install в профиль, скопировать ресурсы между профилями, управление _root_.
+  pi install в профиль, обновить расширения, update extensions, bulk update, скопировать ресурсы между профилями, управление _root_.
 ---
 
 # Pi Profile Manager (piw)
@@ -49,6 +49,8 @@ piw delete <name> [-y]                  # Delete profile
 # Package management
 piw install <pkg>                       # Install package into all profiles + _root_
 piw install <pkg> -t <p1,p2>           # Install into specific targets
+piw update                              # Bulk update extensions in all profiles + _root_
+piw update -t <p1,p2>                   # Update extensions in specific targets
 
 # Advanced management
 piw manage <name> --show                # Show profile resources
@@ -115,6 +117,16 @@ piw create -n minimal -f _root_ --packages npm:pi-env,npm:ponytail --yes
 ### Add a package to all profiles
 ```bash
 piw install npm:some-package
+```
+
+### Update extensions in all profiles
+```bash
+piw update
+```
+Prompts you to pick targets (default: all profiles + `_root_`). Or pick
+them directly:
+```bash
+piw update -t work,experiment
 ```
 
 ### Add a package only to _root_

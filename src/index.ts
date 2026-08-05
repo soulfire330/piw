@@ -8,6 +8,7 @@ import type {
   ManageOptions,
   ListOptions,
   ShowOptions,
+  UpdateOptions,
 } from "./types.js";
 
 const HELP = `piw — Pi Profile Manager
@@ -22,6 +23,7 @@ Usage:
   piw delete <name> [options]      Delete a profile
   piw manage <name> [options]      Manage a profile
   piw install <pkg> [options]      Install a package into profiles
+  piw update [options]             Update extensions in profiles
   piw <profile> [...]              Launch pi with a profile
 
 Options (create):
@@ -43,6 +45,10 @@ Options (delete, clone):
   --yes, -y               Skip confirmation
 
 Options (install):
+  --target, -t <list>     Comma-separated targets (_root_, profile names)
+                          Default: all profiles + _root_
+
+Options (update):
   --target, -t <list>     Comma-separated targets (_root_, profile names)
                           Default: all profiles + _root_
 
@@ -185,6 +191,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === "update") {
+    const { update } = await import("./commands/update.js");
+    const opts: UpdateOptions = { targets: csv(str("target")) };
+    await update(opts);
+    return;
+  }
+
   // ── Profile shortcut: piw <profile> ─────────────────────────
   if (cmd && !cmd.startsWith("-")) {
     const { listAllProfileDirs, profilePath } = await import(
@@ -192,7 +205,7 @@ async function main(): Promise<void> {
     );
     const profiles = listAllProfileDirs();
     // Check if it's a known profile or if we should treat it as one
-    if (profiles.includes(cmd) || !["create", "list", "show", "clone", "rename", "delete", "manage", "install"].includes(cmd)) {
+    if (profiles.includes(cmd) || !["create", "list", "show", "clone", "rename", "delete", "manage", "install", "update"].includes(cmd)) {
       const dir = profilePath(cmd);
       // Only proceed if it's actually a profile directory
       if (profiles.includes(cmd)) {
@@ -213,6 +226,7 @@ async function main(): Promise<void> {
   import("./commands/clone.js");
   import("./commands/manage.js");
   import("./commands/install.js");
+  import("./commands/update.js");
   import("./commands/delete.js");
   import("./commands/rename.js");
   import("./commands/list.js");
