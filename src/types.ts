@@ -36,6 +36,7 @@ export interface CreateOptions {
   skills?: string[];
   prompts?: string[];
   themes?: string[];
+  extends?: string[];
   yes?: boolean;
 }
 
@@ -65,6 +66,7 @@ export interface ManageOptions {
   copyFrom?: string;
   renameTo?: string;
   deleteProfile?: boolean;
+  extends?: string[];
   yes?: boolean;
 }
 

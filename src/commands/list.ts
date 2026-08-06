@@ -2,6 +2,7 @@ import type { ListOptions } from "../types.js";
 import { COPYABLE_DIRS, COPYABLE_LABELS } from "../types.js";
 import { readPackages, listLooseItems } from "../services/package.service.js";
 import { listProfiles } from "../services/profile.service.js";
+import { readExtends } from "../services/inherit.service.js";
 
 export async function list(opts?: ListOptions): Promise<void> {
   const profiles = listProfiles();
@@ -16,6 +17,7 @@ export async function list(opts?: ListOptions): Promise<void> {
       return {
         name: p.name,
         createdAt: p.createdAt.toISOString(),
+        extends: readExtends(p.name),
         packages: pkgs.map((x) => ({ source: x.source, kind: x.kind })),
         resources,
       };
@@ -40,9 +42,11 @@ export async function list(opts?: ListOptions): Promise<void> {
 
   for (const p of profiles) {
     const pkgs = readPackages(p.name);
+    const ext = readExtends(p.name);
     const lines: string[] = [
       `▸ ${p.name}`,
       `  Created: ${p.createdAt.toLocaleDateString()}`,
+      ...(ext.length > 0 ? [`  Extends: ${ext.join(", ")}`] : []),
       pkgs.length > 0
         ? `  Packages: ${pkgs.length} (${pkgs.map((x) => x.id).join(", ")})`
         : "  Packages: none",

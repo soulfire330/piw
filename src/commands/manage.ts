@@ -15,9 +15,58 @@ import {
   listSourceItems,
 } from "../services/resource.service.js";
 import { piInstall, piRemove } from "../services/pi.service.js";
+import {
+  composeProfile,
+  readExtends,
+  writeExtends,
+} from "../services/inherit.service.js";
 import { rename } from "./rename.js";
 import { deleteCmd } from "./delete.js";
 import { show } from "./show.js";
+
+// ── Inheritance (extends) ──────────────────────────────────────
+
+async function setInheritance(name: string, list: string[]): Promise<void> {
+  writeExtends(name, list);
+  const res = composeProfile(name);
+  for (const i of res.invalid)
+    console.warn(`⚠ Ignoring unsafe parent name "${i}"`);
+  for (const m of res.missing)
+    console.warn(`⚠ Parent profile "${m}" not found — skipped`);
+  if (res.cycle)
+    console.warn(`⚠ Inheritance cycle detected — offending parents skipped`);
+  if (list.length === 0) {
+    console.log(`Cleared inheritance for "${name}"`);
+    return;
+  }
+  console.log(
+    `"${name}" now extends ${list.join(", ")} — ` +
+      `${res.filesCopied} resource(s), ${res.packagesAdded.length} inherited package(s)`,
+  );
+}
+
+async function editInheritance(name: string): Promise<void> {
+  const { cancel, isCancel, multiselect } = await import("@clack/prompts");
+  const home = process.env.HOME ?? "~";
+  const others = listAllProfileDirs().filter((d) => d !== name);
+  const current = readExtends(name);
+
+  const picked = await multiselect({
+    message: `Inherit into "${name}" from (union at every launch):`,
+    options: [
+      { value: "_root_", label: "_root_", hint: `${home}/.pi/agent/` },
+      ...others.map((p) => ({ value: p, label: p })),
+    ],
+    initialValues: current,
+    required: false,
+  });
+
+  if (isCancel(picked)) {
+    cancel("Cancelled");
+    return;
+  }
+  await setInheritance(name, (picked as string[]) ?? []);
+}
 
 // ── Copy from another profile ──────────────────────────────────
 
@@ -342,6 +391,17 @@ export async function manage(opts?: ManageOptions): Promise<void> {
       await copyFromOther(o.profile, o.copyFrom);
       return;
     }
+    if (o.extends) {
+      if (o.profile === "_root_") {
+        console.error("Cannot set inheritance on _root_");
+        process.exit(1);
+      }
+      // `--extends none` (or empty) clears inheritance. Names are already
+      // validated at the CLI boundary (see checkName in index.ts).
+      const list = o.extends.filter((x) => x !== "none" && x !== "-");
+      await setInheritance(o.profile, list);
+      return;
+    }
   }
 
   // ── Interactive path ────────────────────────────────────────
@@ -380,6 +440,7 @@ export async function manage(opts?: ManageOptions): Promise<void> {
   ];
   if (!isRoot) {
     actionOptions.push(
+      { value: "extends", label: "Set inheritance (extends)" },
       { value: "rename", label: "Rename profile" },
       { value: "rm", label: "Delete profile" },
     );
@@ -404,6 +465,8 @@ export async function manage(opts?: ManageOptions): Promise<void> {
     await copyFromOther(target);
   } else if (action === "delete") {
     await deleteItems(target);
+  } else if (action === "extends") {
+    await editInheritance(target);
   }
 
   outro("Done");

@@ -38,6 +38,7 @@ piw --help                 # Full CLI reference
 # CRUD
 piw create -n <name> -f <source> [-y]   # Create from _root_ or profile
 piw create -n <name> --empty            # Create empty profile
+piw create -n <name> --extends a,b      # Inherit union of profiles a + b at launch
 piw list                                # List profiles (human-readable)
 piw list --json                         # List profiles (JSON)
 piw show <name>                         # Show profile details
@@ -55,11 +56,15 @@ piw update -t <p1,p2>                   # Update extensions in specific targets
 # Advanced management
 piw manage <name> --show                # Show profile resources
 piw manage <name> --copy-from <src>     # Copy new items from another profile
+piw manage <name> --extends a,b         # Set parent profiles (--extends none clears)
 piw manage <name> --rename <new>        # Rename
 piw manage <name> --delete-profile -y   # Delete profile
 
+# Inheritance
+piw compose <name>                      # Rebuild an inheriting profile's union
+
 # Launch pi with a profile
-piw <profile> [pi-args...]             # Sets PI_CODING_AGENT_DIR
+piw <profile> [pi-args...]             # Sets PI_CODING_AGENT_DIR (composes first)
 ```
 
 ## Profile structure
@@ -68,7 +73,7 @@ piw <profile> [pi-args...]             # Sets PI_CODING_AGENT_DIR
 ~/.pi/profiles/<name>/
 ├── AGENTS.md           # Always local (identity)
 ├── APPEND_SYSTEM.md    # Always local
-├── settings.json       # Inherited packages list
+├── settings.json       # Packages list + optional "extends": [parents]
 ├── models.json         # Config (inheritable)
 ├── keybindings.json    # Config (inheritable)
 ├── extensions/         # Loose + package-provided
@@ -92,7 +97,15 @@ interactive TUI. Cannot be renamed or deleted.
 - **Loose resources** are files/directories copied directly into the profile's
   `extensions/`, `skills/`, `prompts/`, `themes/` directories.
 
-### Inheritance model
+### Copy vs inheritance — two distinct models
+- **Copy (copy-on-write)** — `-f <source>` / `--copy-from` take a **one-time
+  snapshot** of selected resources at creation/manage time. Profiles then diverge
+  independently.
+- **Inheritance (`extends`)** — a **living link**. A profile lists parent profiles
+  and receives the **union** of their resources + packages, recomposed on every
+  launch, so parent changes propagate automatically and nothing is duplicated.
+
+### Copy model
 When creating a profile from a source, you pick which resources to copy:
 - **Packages** — declared in settings.json, pi installs them on launch
 - **Config files** — `models.json`, `keybindings.json` (copied as files)
@@ -100,6 +113,20 @@ When creating a profile from a source, you pick which resources to copy:
 
 After creation, use `piw manage <name> --copy-from <src>` to pull new
 items from another profile or `_root_`.
+
+### Inheritance model (`extends`)
+A profile's `settings.json` may declare `"extends": ["common", "jakub"]`. Before
+launch, `piw` composes the profile — materializing the **union** of all ancestors
+into its own directory:
+- **Loose resources** and **config files** are copied in.
+- Parents' **packages** are merged into `settings.json` (pi installs the union).
+- `sessions/`, `memory/`, `AGENTS.md` and `extends` itself are never touched.
+
+Precedence: the profile's own files win; among parents, later-listed wins.
+Inheritance is transitive (a parent may extend others; cycles are detected) and
+idempotent — tracked via a `.piw-manifest.json` so stale inherited items are
+removed on recompose. Runs automatically at launch; force with `piw compose <name>`.
+Use this so a `jakub` profile need not repeat every tool already in `common`.
 
 ## CLI patterns
 
@@ -145,6 +172,15 @@ Copies all packages and loose resources that exist in `_root_` but not in
 ```bash
 piw manage target --copy-from source
 ```
+
+### Compose a profile from several others (inheritance)
+```bash
+piw create -n piw --extends common,jakub   # piw = union of common + jakub
+piw manage jakub --extends common          # jakub now also inherits common
+piw manage piw --extends none              # stop inheriting
+```
+The union is rebuilt automatically at launch; run `piw compose <name>` to rebuild
+it on demand (e.g. after editing a parent).
 
 ### Launch pi with a profile and pass args
 ```bash
