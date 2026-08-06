@@ -7,6 +7,7 @@ import {
   listPackageItems,
 } from "../services/package.service.js";
 import { listProfiles, profilePath } from "../services/profile.service.js";
+import { readExtends } from "../services/inherit.service.js";
 
 export async function show(nameOrOpts?: string | ShowOptions): Promise<void> {
   const opts: ShowOptions =
@@ -58,6 +59,7 @@ export async function show(nameOrOpts?: string | ShowOptions): Promise<void> {
       name: target,
       createdAt: info?.createdAt.toISOString() ?? null,
       path: dir,
+      extends: readExtends(target),
       packages: pkgs.map((p) => ({ source: p.source, kind: p.kind })),
       looseResources: loose,
       packageResources: pkgResources,
@@ -76,6 +78,10 @@ export async function show(nameOrOpts?: string | ShowOptions): Promise<void> {
     log.info(`Created: ${info.createdAt.toLocaleString()}`);
   }
   log.info(`Path: ${dir}`);
+  const ext = readExtends(target);
+  if (ext.length > 0) {
+    log.info(`Extends: ${ext.join(", ")} (union composed at launch)`);
+  }
   log.info("");
 
   // Packages

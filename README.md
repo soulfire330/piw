@@ -30,6 +30,7 @@ piw
 **Manage** — select a profile, then:
 - **Show resources** — see every package, loose resource, and package-provided item
 - **Copy from another profile** — pull in new packages and resources from `_root_` or another profile. Multiselect picker — choose exactly what to bring over
+- **Set inheritance (extends)** — pick parent profiles to union in at every launch (see [Profile inheritance](#profile-inheritance))
 - **Delete items** — remove packages or loose resources from the profile
 - **Rename** or **Delete** the profile
 
@@ -44,10 +45,13 @@ Everything the TUI can do is also available non-interactively:
 ```bash
 piw create -n work -f _root_                     # Create from root
 piw create -n minimal -f _root_ --packages npm:ponytail,npm:pi-env -y
+piw create -n piw --extends common,jakub         # Inherit: union of common + jakub
 piw clone work experiment                        # Clone
 piw install npm:some-pkg -t work,experiment      # Install into specific profiles
 piw update -t work,experiment                     # Update extensions in specific profiles
 piw manage work --copy-from _root_               # Pull new items from root
+piw manage jakub --extends common                # Set/replace parent profiles
+piw compose piw                                  # Rebuild an inheriting profile's union
 piw list --json                                  # Machine-readable output
 piw work                                         # Launch Pi with profile
 ```
@@ -80,6 +84,44 @@ piw work                                         # Launch Pi with profile
 ```
 
 Copy-on-write: inherit resources at creation time, then profiles diverge independently. No symlinks, no shared state. Launch with `piw <name>` — Pi sees that profile's directory as its agent root and auto-installs declared packages on first run.
+
+## Profile inheritance
+
+Copy-on-write is a one-time snapshot. **Inheritance** is a *living* link: a profile declares parents and gets the **union** of their tools on every launch — no duplication, and parent changes flow through automatically.
+
+Say you keep shared tools in a `common` profile and personal ones in `jakub`. Compose them without repeating anything:
+
+```bash
+piw create -n common -f _root_ --packages npm:shared-a,npm:shared-b -y
+piw create -n jakub  --empty                      # your personal tools live here
+piw create -n piw    --extends common,jakub       # piw = common ∪ jakub
+piw piw                                            # launch — union is assembled first
+```
+
+Add a tool to `common` and every profile that extends it picks it up on its next launch.
+
+**How it works.** The parents are listed in the profile's `settings.json`:
+
+```json
+{ "extends": ["common", "jakub"] }
+```
+
+Because Pi reads a single agent directory, `piw` *composes* the profile right before launch — materializing the union into the profile's own directory:
+
+- **Loose resources** (`extensions/`, `skills/`, `prompts/`, `themes/`) — copied in per item.
+- **Config files** (`models.json`, `keybindings.json`) — copied whole.
+- **Packages** — the parents' `packages` are merged into `settings.json`, so Pi auto-installs the union on launch.
+
+`sessions/`, `memory/`, `AGENTS.md` and the `extends` declaration itself are always left untouched.
+
+**Rules of the union**
+
+- **Your own files win.** Anything the profile defines itself is never overwritten by a parent.
+- **Later parents win.** In `extends: ["common", "jakub"]`, `jakub` overrides `common` on a conflict.
+- **Transitive.** A parent may extend its own parents; the whole graph is flattened (cycles are detected and skipped).
+- **Idempotent & self-healing.** Composition is tracked in a `.piw-manifest.json`, so it re-runs cleanly every launch: new parent items appear, removed ones disappear, nothing accretes.
+
+Composition runs automatically on launch. Force it anytime — e.g. to preview after editing a parent — with `piw compose <name>`. Set or change parents on an existing profile with `piw manage <name> --extends common,jakub` (use `--extends none` to clear).
 
 ## Install
 

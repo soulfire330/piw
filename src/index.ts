@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { spawn } from "./spawn.js";
+import { isSafeProfileName } from "./services/profile.service.js";
 import type {
   CreateOptions,
   CloneOptions,
@@ -24,6 +25,7 @@ Usage:
   piw manage <name> [options]      Manage a profile
   piw install <pkg> [options]      Install a package into profiles
   piw update [options]             Update extensions in profiles
+  piw compose <name>               Rebuild an inheriting profile's union
   piw <profile> [...]              Launch pi with a profile
 
 Options (create):
@@ -36,6 +38,7 @@ Options (create):
   --skills, -s <list>     Comma-separated skill names
   --prompts <list>        Comma-separated prompt names
   --themes <list>         Comma-separated theme names
+  --extends <list>        Comma-separated parent profiles (union at launch)
   --yes, -y               Skip confirmation
 
 Options (list, show):
@@ -55,6 +58,7 @@ Options (update):
 Options (manage):
   --show                  Show profile resources
   --copy-from <src>       Copy new items from another profile
+  --extends <list>        Set parent profiles (union at launch), empty to clear
   --rename <new-name>     Rename the profile
   --delete-profile        Delete the profile
   --yes, -y               Skip confirmation`;
@@ -81,6 +85,7 @@ async function main(): Promise<void> {
       skills: { type: "string", short: "s" },
       prompts: { type: "string" },
       themes: { type: "string" },
+      extends: { type: "string" },
       target: { type: "string", short: "t" },
       show: { type: "boolean" },
       "copy-from": { type: "string" },
@@ -103,6 +108,33 @@ async function main(): Promise<void> {
   const str = (key: string): string | undefined =>
     typeof v[key] === "string" ? (v[key] as string) : undefined;
 
+  // Security gate: every profile name a user passes on the CLI is turned into a
+  // filesystem path (~/.pi/profiles/<name>). Reject anything that isn't a plain
+  // identifier up front, so a name like "../../etc" can never escape that dir and
+  // reach delete/rename/copy/spawn. `_root_` passes (it is all safe characters).
+  const checkName = (label: string, ...names: (string | undefined)[]): void => {
+    for (const n of names) {
+      if (n !== undefined && !isSafeProfileName(n)) {
+        console.error(
+          `Invalid ${label} "${n}": only letters, numbers, hyphens and underscores are allowed`,
+        );
+        process.exit(1);
+      }
+    }
+  };
+  // Config filenames must be a single plain component (no separators, no "..")
+  // so join(profileDir, filename) can't escape the profile dir.
+  const SAFE_FILENAME = /^[A-Za-z0-9._-]+$/;
+  const checkFilename = (label: string, ...names: (string | undefined)[]): void => {
+    for (const n of names) {
+      if (n === undefined) continue;
+      if (!SAFE_FILENAME.test(n) || n === "." || n === "..") {
+        console.error(`Invalid ${label} "${n}": must be a plain filename`);
+        process.exit(1);
+      }
+    }
+  };
+
   // ── Subcommands ──────────────────────────────────────────────
 
   if (cmd === "create") {
@@ -117,9 +149,32 @@ async function main(): Promise<void> {
       skills: csv(str("skills")),
       prompts: csv(str("prompts")),
       themes: csv(str("themes")),
+      extends: csv(str("extends")),
       yes: flag("yes"),
     };
+    checkName("profile name", opts.name);
+    checkName("source profile", opts.from);
+    if (opts.extends) checkName("parent profile", ...opts.extends);
+    if (opts.configs) checkFilename("config file", ...opts.configs);
     await create(opts);
+    return;
+  }
+
+  if (cmd === "compose") {
+    const target = positionals[1];
+    if (!target) {
+      console.error("Usage: piw compose <name>");
+      process.exit(1);
+    }
+    checkName("profile name", target);
+    const { composeForLaunch, readExtends } = await import(
+      "./services/inherit.service.js"
+    );
+    if (readExtends(target).length === 0) {
+      console.log(`Profile "${target}" declares no "extends" — nothing to compose`);
+      return;
+    }
+    composeForLaunch(target);
     return;
   }
 
@@ -136,6 +191,7 @@ async function main(): Promise<void> {
       name: positionals[1],
       json: flag("json"),
     };
+    checkName("profile name", opts.name);
     await show(opts);
     return;
   }
@@ -147,11 +203,14 @@ async function main(): Promise<void> {
       target: positionals[2],
       yes: flag("yes"),
     };
+    checkName("source profile", opts.source);
+    checkName("target profile", opts.target);
     await clone(opts);
     return;
   }
 
   if (cmd === "rename") {
+    checkName("profile name", positionals[1], positionals[2]);
     const { rename } = await import("./commands/rename.js");
     await rename(positionals[1], positionals[2]);
     return;
@@ -163,6 +222,7 @@ async function main(): Promise<void> {
       name: positionals[1],
       yes: flag("yes") || flag("force"),
     };
+    checkName("profile name", opts.name);
     await deleteCmd(opts);
     return;
   }
@@ -175,8 +235,14 @@ async function main(): Promise<void> {
       copyFrom: str("copy-from"),
       renameTo: str("rename"),
       deleteProfile: flag("delete-profile"),
+      extends: csv(str("extends")),
       yes: flag("yes"),
     };
+    checkName("profile", opts.profile);
+    checkName("source profile", opts.copyFrom);
+    checkName("new name", opts.renameTo);
+    // "none"/"-" are the clear-inheritance sentinels and pass the name check.
+    if (opts.extends) checkName("parent profile", ...opts.extends);
     await manage(opts);
     return;
   }
@@ -187,6 +253,7 @@ async function main(): Promise<void> {
       pkg: positionals[1],
       targets: csv(str("target")),
     };
+    if (opts.targets) checkName("target", ...opts.targets);
     await install(opts);
     return;
   }
@@ -194,6 +261,7 @@ async function main(): Promise<void> {
   if (cmd === "update") {
     const { update } = await import("./commands/update.js");
     const opts: UpdateOptions = { targets: csv(str("target")) };
+    if (opts.targets) checkName("target", ...opts.targets);
     await update(opts);
     return;
   }
@@ -205,10 +273,14 @@ async function main(): Promise<void> {
     );
     const profiles = listAllProfileDirs();
     // Check if it's a known profile or if we should treat it as one
-    if (profiles.includes(cmd) || !["create", "list", "show", "clone", "rename", "delete", "manage", "install", "update"].includes(cmd)) {
+    if (profiles.includes(cmd) || !["create", "compose", "list", "show", "clone", "rename", "delete", "manage", "install", "update"].includes(cmd)) {
       const dir = profilePath(cmd);
       // Only proceed if it's actually a profile directory
       if (profiles.includes(cmd)) {
+        const { composeForLaunch } = await import(
+          "./services/inherit.service.js"
+        );
+        composeForLaunch(cmd);
         console.log(`Launching pi with profile "${cmd}"...`);
         const proc = spawn(["pi", ...process.argv.slice(3)], {
           env: { ...process.env, PI_CODING_AGENT_DIR: dir },

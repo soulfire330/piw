@@ -23,9 +23,19 @@ export function basePath(): string {
 
 // ── Validation ─────────────────────────────────────────────────
 
+/**
+ * Syntactically safe profile identifier: letters, numbers, hyphens, underscores
+ * only — no path separators or `..`, so it can never escape PROFILES_DIR when
+ * concatenated into a path. Use this to guard any name that reaches the
+ * filesystem (including `extends` parents read from settings.json).
+ */
+export function isSafeProfileName(name: string): boolean {
+  return typeof name === "string" && /^[a-z0-9_-]+$/i.test(name);
+}
+
 export function validateProfileName(name: string): string | undefined {
   if (!name || name.trim().length === 0) return "Name is required";
-  if (!/^[a-z0-9_-]+$/i.test(name))
+  if (!isSafeProfileName(name))
     return "Only letters, numbers, hyphens, underscores";
   if (RESERVED_NAMES.includes(name))
     return `"${name}" is a reserved word`;

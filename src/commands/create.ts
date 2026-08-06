@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { CreateOptions, CopyableDir } from "../types.js";
 import { COPYABLE_DIRS, COPYABLE_LABELS } from "../types.js";
 import {
@@ -16,6 +17,7 @@ import {
   copySettingsWithPackages,
   listSourceItems,
 } from "../services/resource.service.js";
+import { composeProfile, writeExtends } from "../services/inherit.service.js";
 
 function sourceDir(src: string): string {
   return src === "_root_" ? basePath() : `${process.env.HOME}/.pi/profiles/${src}`;
@@ -24,8 +26,13 @@ function sourceDir(src: string): string {
 export async function create(opts?: CreateOptions): Promise<void> {
   const o = opts ?? {};
 
-  // ── Non-interactive path: --name + (--from or --empty) ──────
-  if (o.name && (o.from || o.empty)) {
+  // ── Non-interactive path: --name + (--from | --empty | --extends) ──
+  // Two independent ways to seed a new profile, and you can combine them:
+  //   --from   : one-time COPY of resources from a source (copy-on-write).
+  //   --extends: a LIVING link — the profile is (re)built from the union of the
+  //              listed parent profiles on every launch. See inherit.service.ts.
+  const hasExtends = !!o.extends && o.extends.length > 0;
+  if (o.name && (o.from || o.empty || hasExtends)) {
     const name = o.name;
     const err = validateProfileName(name);
     if (err) {
@@ -35,61 +42,79 @@ export async function create(opts?: CreateOptions): Promise<void> {
 
     createProfile(name);
 
-    if (o.empty) {
-      console.log(`Empty profile "${name}" created at ~/.pi/profiles/${name}/`);
-      console.log(`Launch with: piw ${name}`);
-      return;
-    }
+    const summary: string[] = [];
 
-    const source = o.from!;
-    const srcDir = sourceDir(source);
+    // Copy from a source profile / _root_ (copy-on-write, optional)
+    if (o.from) {
+      const source = o.from;
+      const srcDir = sourceDir(source);
 
-    // Packages
-    const srcPackages = readPackagesFromDir(srcDir);
-    const selectedPkgs = o.packages
-      ? srcPackages.filter((p) => o.packages!.includes(p.source)).map((p) => p.source)
-      : srcPackages.map((p) => p.source);
+      // Packages
+      const srcPackages = readPackagesFromDir(srcDir);
+      const selectedPkgs = o.packages
+        ? srcPackages.filter((p) => o.packages!.includes(p.source)).map((p) => p.source)
+        : srcPackages.map((p) => p.source);
 
-    if (selectedPkgs.length > 0) {
-      copySettingsWithPackages(name, source, selectedPkgs);
-    }
+      if (selectedPkgs.length > 0) {
+        copySettingsWithPackages(name, source, selectedPkgs);
+      }
 
-    // Config files
-    const configs = o.configs ?? ["models.json", "keybindings.json"];
-    for (const f of configs) {
-      copyConfigFile(name, source, f);
-    }
+      // Config files
+      const configs = o.configs ?? ["models.json", "keybindings.json"];
+      for (const f of configs) {
+        copyConfigFile(name, source, f);
+      }
 
-    // Loose resources — if specific items given, copy those; otherwise copy all
-    const resourceFilters: Record<string, string[] | undefined> = {
-      extensions: o.extensions,
-      skills: o.skills,
-      prompts: o.prompts,
-      themes: o.themes,
-    };
+      // Loose resources — if specific items given, copy those; otherwise copy all
+      const resourceFilters: Record<string, string[] | undefined> = {
+        extensions: o.extensions,
+        skills: o.skills,
+        prompts: o.prompts,
+        themes: o.themes,
+      };
 
-    let totalLoose = 0;
-    for (const d of COPYABLE_DIRS) {
-      const filter = resourceFilters[d];
-      const srcItems = listSourceItems(source, d);
-      const pkgProvided = getPackageProvidedItems(srcDir, d);
-      const looseItems = srcItems.filter((item) => !pkgProvided.has(item));
-      const toCopy = filter
-        ? looseItems.filter((i) => filter.includes(i))
-        : looseItems;
-      if (toCopy.length > 0) {
-        copyLooseDirItems(name, source, d, toCopy);
-        totalLoose += toCopy.length;
+      let totalLoose = 0;
+      for (const d of COPYABLE_DIRS) {
+        const filter = resourceFilters[d];
+        const srcItems = listSourceItems(source, d);
+        const pkgProvided = getPackageProvidedItems(srcDir, d);
+        const looseItems = srcItems.filter((item) => !pkgProvided.has(item));
+        const toCopy = filter
+          ? looseItems.filter((i) => filter.includes(i))
+          : looseItems;
+        if (toCopy.length > 0) {
+          copyLooseDirItems(name, source, d, toCopy);
+          totalLoose += toCopy.length;
+        }
+      }
+
+      const parts: string[] = [];
+      if (selectedPkgs.length > 0) parts.push(`${selectedPkgs.length} package(s)`);
+      if (configs.length > 0) parts.push(`${configs.length} config(s)`);
+      if (totalLoose > 0) parts.push(`${totalLoose} loose resource(s)`);
+      summary.push(`from ${source} (${parts.join(", ") || "copy all"})`);
+      if (selectedPkgs.length > 0) {
+        console.log(`${selectedPkgs.length} package(s) declared — Pi will install them on first launch`);
       }
     }
 
-    const parts: string[] = [];
-    if (selectedPkgs.length > 0) parts.push(`${selectedPkgs.length} package(s)`);
-    if (configs.length > 0) parts.push(`${configs.length} config(s)`);
-    if (totalLoose > 0) parts.push(`${totalLoose} loose resource(s)`);
-    console.log(`Profile "${name}" created from ${source} (${parts.join(", ") || "copy all"})`);
-    if (selectedPkgs.length > 0) {
-      console.log(`${selectedPkgs.length} package(s) declared — Pi will install them on first launch`);
+    // Inheritance — record the parents in settings.json, then compose the union
+    // now so the profile is usable immediately (it is re-composed on each launch).
+    // Parent names are already validated at the CLI boundary (index.ts checkName).
+    if (hasExtends) {
+      writeExtends(name, o.extends!);
+      const res = composeProfile(name);
+      for (const m of res.missing)
+        console.warn(`⚠ Parent profile "${m}" not found — skipped`);
+      if (res.cycle)
+        console.warn(`⚠ Inheritance cycle detected — offending parents skipped`);
+      summary.push(`extends ${o.extends!.join(", ")}`);
+    }
+
+    if (summary.length === 0) {
+      console.log(`Empty profile "${name}" created at ~/.pi/profiles/${name}/`);
+    } else {
+      console.log(`Profile "${name}" created — ${summary.join("; ")}`);
     }
     console.log(`Launch with: piw ${name}`);
     return;
@@ -103,6 +128,7 @@ export async function create(opts?: CreateOptions): Promise<void> {
     intro,
     isCancel,
     log,
+    multiselect,
     outro,
     select,
     tasks,
@@ -125,6 +151,39 @@ export async function create(opts?: CreateOptions): Promise<void> {
   const profiles = listAllProfileDirs();
 
   const home = process.env.HOME ?? "~";
+
+  // Inheritance — pick which profiles to inherit from. It's all-or-nothing: each
+  // selected profile is inherited IN FULL (you don't choose individual items),
+  // and its resources are composed in on every launch. Separate from the
+  // one-time "Copy from" step below. (--extends on the CLI skips this prompt.)
+  let extendsSel: string[] = o.extends ?? [];
+  if (!o.extends && (profiles.length > 0 || existsSync(basePath()))) {
+    const picked = await multiselect({
+      message: "Inherit from? (inherits everything — Enter to skip)",
+      options: [
+        { value: "_root_", label: "_root_", hint: "base pi dir" },
+        ...profiles.map((p) => ({ value: p, label: p })),
+      ],
+      required: false,
+    });
+    if (isCancel(picked)) {
+      cancel("Cancelled");
+      return;
+    }
+    extendsSel = (picked as string[]) ?? [];
+  }
+
+  // Saves the chosen parents and composes their union into the new profile.
+  // Invoked right after createProfile() in each of the creation branches below,
+  // so it works whether the profile is empty, copied from a source, or neither.
+  const applyExtends = (): void => {
+    if (extendsSel.length === 0) return;
+    writeExtends(name as string, extendsSel);
+    const res = composeProfile(name as string);
+    for (const m of res.missing)
+      log.warn(`Parent profile "${m}" not found — skipped`);
+    if (res.cycle) log.warn("Inheritance cycle detected — offending parents skipped");
+  };
   const sourceOptions: Array<{ value: string; label: string; hint?: string }> = [
     { value: "_root_", label: "_root_", hint: `${home}/.pi/agent/` },
     ...profiles.map((p) => ({
@@ -164,7 +223,10 @@ export async function create(opts?: CreateOptions): Promise<void> {
         title: `Creating profile "${name}"`,
         task: async () => {
           createProfile(name);
-          return `Empty profile "${name}" created at ~/.pi/profiles/${name}/`;
+          applyExtends();
+          return extendsSel.length > 0
+            ? `Profile "${name}" created — extends ${extendsSel.join(", ")}`
+            : `Empty profile "${name}" created at ~/.pi/profiles/${name}/`;
         },
       },
     ]);
@@ -231,13 +293,14 @@ export async function create(opts?: CreateOptions): Promise<void> {
       return;
     }
     createProfile(name);
+    applyExtends();
     log.success(`Launch with: piw ${name}`);
     outro("Done");
     return;
   }
 
   const picked = await groupMultiselect({
-    message: `Inherit from ${srcLabel}?`,
+    message: `Copy from ${srcLabel}?`,
     options: groups,
     groupSpacing: 1,
     selectableGroups: false,
@@ -269,7 +332,12 @@ export async function create(opts?: CreateOptions): Promise<void> {
     }
   }
 
-  if (inheritedPackages.length === 0 && configsToCopy.length === 0 && Object.keys(dirItems).length === 0) {
+  if (
+    inheritedPackages.length === 0 &&
+    configsToCopy.length === 0 &&
+    Object.keys(dirItems).length === 0 &&
+    extendsSel.length === 0
+  ) {
     log.info("Nothing selected");
     outro("Cancelled");
     return;
@@ -283,6 +351,7 @@ export async function create(opts?: CreateOptions): Promise<void> {
     parts.push(`${configsToCopy.length} config(s)`);
   const looseCount = Object.values(dirItems).flat().length;
   if (looseCount > 0) parts.push(`${looseCount} loose resource(s)`);
+  if (extendsSel.length > 0) parts.push(`extends ${extendsSel.join(", ")}`);
 
   const proceed = o.yes ? true : await confirm({
     message: `Create "${name}" from ${srcLabel}? (${parts.join(", ") || "empty"})`,
@@ -315,6 +384,9 @@ export async function create(opts?: CreateOptions): Promise<void> {
             copyLooseDirItems(name, source, d as CopyableDir, items);
           }
         }
+
+        // Compose inheritance on top — copied source items count as "own".
+        applyExtends();
 
         return `Profile "${name}" created at ~/.pi/profiles/${name}/`;
       },

@@ -82,6 +82,8 @@ export default async function interactive(): Promise<void> {
     }
 
     const dir = profilePath(target);
+    const { composeForLaunch } = await import("./services/inherit.service.js");
+    composeForLaunch(target);
     console.log(`Launching pi with profile "${target}"...`);
     const proc = spawn(["pi"], {
       env: { ...process.env, PI_CODING_AGENT_DIR: dir },
